@@ -99,14 +99,15 @@ class RightWin_QR_Portal {
 
     /* ================= Shortlink Builder ================= */
 
-    private function build_shortlink($alias) {
-        // If pretty permalinks are enabled, use /r/{alias}, else use ?rwqr_alias={alias}
-        $pretty = get_option('permalink_structure');
-        if (!empty($pretty)) {
-            return home_url('/r/' . $alias);
-        }
-        return add_query_arg('rwqr_alias', $alias, home_url('/'));
+private function build_shortlink($alias) {
+    // Subdirectory-safe: do NOT start with a leading slash
+    $pretty = get_option('permalink_structure');
+    if (!empty($pretty)) {
+        return home_url('r/' . ltrim($alias, '/'));
     }
+    // For non-pretty, also avoid forcing a trailing slash base
+    return add_query_arg('rwqr_alias', $alias, home_url());
+}
 
     /* ================= Redirect & PDF & View ================= */
 
