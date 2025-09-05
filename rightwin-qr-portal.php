@@ -2,7 +2,7 @@
 /*
 Plugin Name: RightWin QR Portal
 Description: QR code portal with dynamic redirects, analytics, Elementor-safe shortcodes, and admin controls.
-Version: 1.2.0
+Version: 1.2.1
 Author: RIGHT WIN MEDIAS
 Text Domain: rightwin-qr-portal
 */
@@ -11,42 +11,36 @@ if (!defined('ABSPATH')) exit;
 
 class RightWin_QR_Portal {
 
-    const VERSION = '1.2.0';
+    const VERSION = '1.2.1';
     const CPT = 'rwqr';
     const TABLE_SCANS = 'rwqr_scans';
     const OPTION_SETTINGS = 'rwqr_settings';
 
     public function __construct() {
-        // Activation
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
 
-        // Core
         add_action('init', [$this, 'register_cpt']);
         add_action('init', [$this, 'add_rewrite']);
         add_filter('query_vars', [$this, 'query_vars']);
         add_action('template_redirect', [$this, 'handle_redirect']);
         add_action('template_redirect', [$this, 'handle_pdf']);
+        add_action('template_redirect', [$this, 'handle_view']); // NEW: landing renderer
 
-        // Admin
         add_action('admin_menu', [$this, 'admin_menu']);
         add_action('admin_post_rwqr_toggle', [$this, 'admin_toggle_qr']);
         add_action('admin_post_rwqr_delete', [$this, 'admin_delete_qr']);
 
-        // Meta boxes
         add_action('add_meta_boxes', [$this, 'add_meta_boxes']);
         add_action('save_post_' . self::CPT, [$this, 'save_meta'], 10, 2);
 
-        // Shortcodes
-        add_shortcode('rwqr_portal', [$this, 'sc_portal']);     // login/register/forgot
-        add_shortcode('rwqr_wizard', [$this, 'sc_wizard']);     // create
-        add_shortcode('rwqr_dashboard', [$this, 'sc_dashboard']); // list/manage
+        add_shortcode('rwqr_portal', [$this, 'sc_portal']);
+        add_shortcode('rwqr_wizard', [$this, 'sc_wizard']);
+        add_shortcode('rwqr_dashboard', [$this, 'sc_dashboard']);
 
-        // Assets
         add_action('wp_enqueue_scripts', [$this, 'enqueue']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin']);
 
-        // Footer disclaimer
         add_action('wp_footer', [$this, 'footer_disclaimer']);
     }
 
@@ -75,10 +69,7 @@ class RightWin_QR_Portal {
         flush_rewrite_rules();
     }
 
-    public function deactivate() {
-        flush_rewrite_rules();
-    }
-
+    public function deactivate() { flush_rewrite_rules(); }
     /* ================= CPT & Rewrite ================= */
 
     public function register_cpt() {
@@ -102,10 +93,22 @@ class RightWin_QR_Portal {
     public function query_vars($vars) {
         $vars[] = 'rwqr_alias';
         $vars[] = 'rwqr_pdf';
+        $vars[] = 'rwqr_view'; // NEW
         return $vars;
     }
 
-    /* ================= Redirect & PDF ================= */
+    /* ================= Shortlink Builder ================= */
+
+    private function build_shortlink($alias) {
+        // If pretty permalinks are enabled, use /r/{alias}, else use ?rwqr_alias={alias}
+        $pretty = get_option('permalink_structure');
+        if (!empty($pretty)) {
+            return home_url('/r/' . $alias);
+        }
+        return add_query_arg('rwqr_alias', $alias, home_url('/'));
+    }
+
+    /* ================= Redirect & PDF & View ================= */
 
     public function handle_redirect() {
         $alias = get_query_var('rwqr_alias');
@@ -122,12 +125,12 @@ class RightWin_QR_Portal {
         if (!empty($m['end_at']) && $now > strtotime($m['end_at'])) { status_header(410); echo '<h1>QR Ended</h1>'; exit; }
 
         $limit = intval($m['scan_limit'] ?? 0);
-        $count = intval(get_post_meta($qr->ID, 'rwqr_scan_count', true));
+        $count = intval(get_post_meta($qr->ID, 'scan_count', true));
         if ($limit > 0 && $count >= $limit) { status_header(429); echo '<h1>Scan Limit Reached</h1>'; exit; }
 
         // Record scan
         $this->record_scan($qr->ID, $alias);
-        update_post_meta($qr->ID, 'rwqr_scan_count', $count + 1);
+        update_post_meta($qr->ID, 'scan_count', $count + 1);
 
         $target = $m['target_url'] ?? '';
         if (!$target) { status_header(200); echo '<h1>Dynamic QR</h1><p>No target configured.</p>'; exit; }
@@ -162,6 +165,43 @@ class RightWin_QR_Portal {
         readfile($img_path); exit;
     }
 
+    // NEW: Landing renderer for text/vcard/social/price in dynamic mode
+    public function handle_view() {
+        $view_id = absint(get_query_var('rwqr_view'));
+        if (!$view_id) return;
+
+        $qr = get_post($view_id);
+        if (!$qr || $qr->post_type !== self::CPT) { status_header(404); echo 'Not found'; exit; }
+
+        $m = $this->get_qr_meta($qr->ID);
+        $title = esc_html(get_the_title($qr));
+        $payload = (string)($m['payload'] ?? '');
+        $short = ($m['alias'] ? $this->build_shortlink($m['alias']) : '');
+        $is_vcard = (stripos($payload, 'BEGIN:VCARD') !== false);
+
+        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
+        echo '<title>'. $title .'</title></head><body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; padding:20px;">';
+        echo '<h2>'. $title .'</h2>';
+
+        if ($is_vcard) {
+            $vcf = "data:text/x-vcard;charset=utf-8," . rawurlencode($payload);
+            echo '<p><a href="'.$vcf.'" download="'.esc_attr(sanitize_title($title)).'.vcf" style="display:inline-block;border:1px solid #333;padding:8px 12px;border-radius:8px;text-decoration:none">Download Contact (.vcf)</a></p>';
+        }
+
+        if (!empty($payload)) {
+            $safe = esc_html($payload);
+            echo '<pre style="white-space:pre-wrap;background:#f7f7f7;padding:12px;border-radius:8px;border:1px solid #e5e7eb;">'.$safe.'</pre>';
+        } else {
+            echo '<p>No content.</p>';
+        }
+
+        if ($short) {
+            echo '<p style="opacity:.7;font-size:12px">Short link: <a href="'.esc_url($short).'">'.esc_html($short).'</a></p>';
+        }
+
+        echo '</body></html>';
+        exit;
+    }
     private function record_scan($qr_id, $alias) {
         global $wpdb;
         $table = $wpdb->prefix . self::TABLE_SCANS;
@@ -193,9 +233,9 @@ class RightWin_QR_Portal {
             echo '<table class="widefat striped"><thead><tr><th>Title</th><th>Alias</th><th>Status</th><th>Scans</th><th>Actions</th></tr></thead><tbody>';
             while ($q->have_posts()) { $q->the_post();
                 $id = get_the_ID();
-                $alias = get_post_meta($id, 'rwqr_alias', true);
-                $status = get_post_meta($id, 'rwqr_status', true) ?: 'active';
-                $scans = intval(get_post_meta($id, 'rwqr_scan_count', true));
+                $alias = get_post_meta($id, 'alias', true);
+                $status = get_post_meta($id, 'status', true) ?: 'active';
+                $scans = intval(get_post_meta($id, 'scan_count', true));
                 $toggle = wp_nonce_url(admin_url('admin-post.php?action=rwqr_toggle&post='.$id), 'rwqr_toggle_'.$id);
                 $delete = wp_nonce_url(admin_url('admin-post.php?action=rwqr_delete&post='.$id), 'rwqr_delete_'.$id);
                 echo '<tr>';
@@ -243,8 +283,8 @@ class RightWin_QR_Portal {
         if (!current_user_can('manage_options')) wp_die('No permission');
         $id = absint($_GET['post'] ?? 0);
         check_admin_referer('rwqr_toggle_' . $id);
-        $status = get_post_meta($id, 'rwqr_status', true) ?: 'active';
-        update_post_meta($id, 'rwqr_status', $status === 'active' ? 'paused' : 'active');
+        $status = get_post_meta($id, 'status', true) ?: 'active';
+        update_post_meta($id, 'status', $status === 'active' ? 'paused' : 'active');
         wp_safe_redirect(admin_url('admin.php?page=rwqr-admin')); exit;
     }
 
@@ -312,20 +352,18 @@ class RightWin_QR_Portal {
         if (!current_user_can('edit_post', $post_id)) return;
 
         $fields = [
-            'rwqr_type'=>'rwqr_type','rwqr_content_type'=>'rwqr_content_type','rwqr_alias'=>'rwqr_alias',
-            'rwqr_payload'=>'rwqr_payload','rwqr_target_url'=>'rwqr_target_url','rwqr_dark'=>'rwqr_dark',
-            'rwqr_light'=>'rwqr_light','rwqr_title_top'=>'rwqr_title_top','rwqr_title_bottom'=>'rwqr_title_bottom',
-            'rwqr_start_at'=>'rwqr_start_at','rwqr_end_at'=>'rwqr_end_at','rwqr_scan_limit'=>'rwqr_scan_limit',
-            'rwqr_logo_id'=>'rwqr_logo_id','rwqr_logo_pct'=>'rwqr_logo_pct','rwqr_status'=>'rwqr_status'
+            'rwqr_type','rwqr_content_type','rwqr_alias','rwqr_payload','rwqr_target_url','rwqr_dark','rwqr_light',
+            'rwqr_title_top','rwqr_title_bottom','rwqr_start_at','rwqr_end_at','rwqr_scan_limit','rwqr_logo_id','rwqr_logo_pct','rwqr_status'
         ];
-        foreach ($fields as $k=>$name) {
-            $v = isset($_POST[$name]) ? $_POST[$name] : '';
-            if (in_array($k,['rwqr_dark','rwqr_light'])) $v = sanitize_hex_color($v);
-            elseif (in_array($k,['rwqr_target_url'])) $v = esc_url_raw($v);
-            elseif (in_array($k,['rwqr_scan_limit','rwqr_logo_id','rwqr_logo_pct'])) $v = intval($v);
+        foreach ($fields as $name) {
+            $v = $_POST[$name] ?? '';
+            if ($name==='rwqr_dark' || $name==='rwqr_light') $v = sanitize_hex_color($v);
+            elseif ($name==='rwqr_target_url') $v = esc_url_raw($v);
+            elseif (in_array($name,['rwqr_scan_limit','rwqr_logo_id','rwqr_logo_pct'])) $v = intval($v);
             else $v = sanitize_text_field($v);
-            update_post_meta($post_id, str_replace('rwqr_','',$k), $v);
+            update_post_meta($post_id, str_replace('rwqr_','',$name), $v);
         }
+
         $png_id = $this->generate_and_attach_png($post_id);
         if ($png_id) set_post_thumbnail($post_id, $png_id);
     }
@@ -391,7 +429,8 @@ class RightWin_QR_Portal {
         if (isset($_POST['_rwqr_register']) && wp_verify_nonce($_POST['_rwqr_register'],'rwqr_register')) {
             $uid = wp_create_user(sanitize_user($_POST['user_login']), (string)$_POST['user_pass'], sanitize_email($_POST['user_email']));
             if (!is_wp_error($uid)) {
-                $user_obj = new WP_User($uid); $user_obj->set_role('author'); // allow edit/uploads
+                $user_obj = new WP_User($uid);
+                $user_obj->set_role('author'); // allow edit/uploads
                 $out = '<div class="rwqr-success">Registered. Please login.</div>' . $out;
             } else {
                 $out = '<div class="rwqr-error">'.esc_html($uid->get_error_message()).'</div>'.$out;
@@ -429,12 +468,14 @@ class RightWin_QR_Portal {
                 <?php wp_nonce_field('rwqr_wizard','rwqr_wizard_nonce'); ?>
                 <div class="rwqr-grid">
                     <p><label>QR Name<br><input type="text" name="qr_name" required></label></p>
+
                     <p><label>QR Mode<br>
                         <select name="qr_type">
                             <option value="dynamic">Dynamic (trackable)</option>
                             <option value="static">Static (non-trackable)</option>
                         </select></label>
                     </p>
+
                     <p><label>Content Type<br>
                         <select name="qr_content_type" id="qr_content_type">
                             <option value="link">Link</option>
@@ -447,6 +488,7 @@ class RightWin_QR_Portal {
                             <option value="greview">Google Review (Place ID)</option>
                         </select></label>
                     </p>
+
                     <p><label>Pattern<br>
                         <select name="qr_pattern">
                             <option value="square">Square</option>
@@ -460,41 +502,49 @@ class RightWin_QR_Portal {
                     <p><label>Logo Size % of QR width<br><input type="number" name="qr_logo_pct" min="0" max="60" value="20"></label></p>
                     <p><label>Top Title<br><input type="text" name="qr_title_top"></label></p>
                     <p><label>Bottom Title<br><input type="text" name="qr_title_bottom"></label></p>
+
                     <p class="rwqr-dynamic-only"><label>Alias (for dynamic)<br><input type="text" name="qr_alias" placeholder="optional-custom-alias"></label></p>
 
                     <!-- Content fields -->
                     <div class="rwqr-fieldset rwqr-ct-link">
                         <p><label>Destination URL<br><input type="url" name="ct_link_url" placeholder="https://example.com"></label></p>
                     </div>
+
                     <div class="rwqr-fieldset rwqr-ct-text" style="display:none">
                         <p><label>Message Text<br><textarea name="ct_text" rows="4" placeholder="Your text or instructions"></textarea></label></p>
                     </div>
+
                     <div class="rwqr-fieldset rwqr-ct-vcard" style="display:none">
-                        <p><label>Full Name<br><input type="text" name="ct_v_name"></label></p>
-                        <p><label>Title<br><input type="text" name="ct_v_title"></label></p>
-                        <p><label>Organization<br><input type="text" name="ct_v_org"></label></p>
-                        <p><label>Phone<br><input type="text" name="ct_v_tel"></label></p>
-                        <p><label>Email<br><input type="email" name="ct_v_email"></label></p>
-                        <p><label>Website<br><input type="url" name="ct_v_url"></label></p>
+                        <p><label>Full Name<br><input type="text" name="ct_v_name" placeholder="Jane Doe"></label></p>
+                        <p><label>Title<br><input type="text" name="ct_v_title" placeholder="Marketing Manager"></label></p>
+                        <p><label>Organization<br><input type="text" name="ct_v_org" placeholder="Company Pvt Ltd"></label></p>
+                        <p><label>Phone<br><input type="text" name="ct_v_tel" placeholder="+91 9xxxxxxxxx"></label></p>
+                        <p><label>Email<br><input type="email" name="ct_v_email" placeholder="name@example.com"></label></p>
+                        <p><label>Website<br><input type="url" name="ct_v_url" placeholder="https://..."></label></p>
                     </div>
+
                     <div class="rwqr-fieldset rwqr-ct-file" style="display:none">
                         <p><label>File Upload (PDF/Doc/Image)<br><input type="file" name="ct_file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"></label></p>
                     </div>
+
                     <div class="rwqr-fieldset rwqr-ct-catalogue" style="display:none">
-                        <p><label>Catalogue URL<br><input type="url" name="ct_catalogue_url"></label></p>
+                        <p><label>Catalogue URL<br><input type="url" name="ct_catalogue_url" placeholder="https://your-catalogue"></label></p>
                     </div>
+
                     <div class="rwqr-fieldset rwqr-ct-price" style="display:none">
-                        <p><label>Amount<br><input type="number" step="0.01" name="ct_price_amount"></label></p>
+                        <p><label>Amount<br><input type="number" step="0.01" name="ct_price_amount" placeholder="999.00"></label></p>
                         <p><label>Currency<br><input type="text" name="ct_price_currency" value="INR"></label></p>
-                        <p><label>Product/Page URL (optional)<br><input type="url" name="ct_price_url"></label></p>
+                        <p><label>Product/Page URL (optional)<br><input type="url" name="ct_price_url" placeholder="https://buy-link"></label></p>
                     </div>
+
                     <div class="rwqr-fieldset rwqr-ct-social" style="display:none">
-                        <p><label>Facebook<br><input type="url" name="ct_social_fb"></label></p>
-                        <p><label>Instagram<br><input type="url" name="ct_social_ig"></label></p>
-                        <p><label>YouTube<br><input type="url" name="ct_social_yt"></label></p>
-                        <p><label>WhatsApp (share text)<br><input type="text" name="ct_social_wa"></label></p>
-                        <p><label>Telegram<br><input type="url" name="ct_social_tg"></label></p>
+                        <p><label>Facebook<br><input type="url" name="ct_social_fb" placeholder="https://facebook.com/..."></label></p>
+                        <p><label>Instagram<br><input type="url" name="ct_social_ig" placeholder="https://instagram.com/..."></label></p>
+                        <p><label>YouTube<br><input type="url" name="ct_social_yt" placeholder="https://youtube.com/@..."></label></p>
+                        <p><label>WhatsApp (share text)<br><input type="text" name="ct_social_wa" placeholder="Hi!"></label></p>
+                        <p><label>Telegram<br><input type="url" name="ct_social_tg" placeholder="https://t.me/..."></label></p>
                     </div>
+
                     <div class="rwqr-fieldset rwqr-ct-greview" style="display:none">
                         <p><label>Google Place ID<br><input type="text" name="ct_g_placeid" placeholder="ChIJ..."></label></p>
                     </div>
@@ -509,7 +559,6 @@ class RightWin_QR_Portal {
         <?php
         return ob_get_clean();
     }
-
     private function handle_wizard_submit() {
         $user = wp_get_current_user();
         if (!$user || 0 === $user->ID) return new WP_Error('not_logged_in','Please login.');
@@ -540,7 +589,7 @@ class RightWin_QR_Portal {
                 break;
             case 'text':
                 $txt = sanitize_textarea_field($_POST['ct_text'] ?? '');
-                $payload = $txt; if ($type==='dynamic') $target = home_url('/');
+                $payload = $txt; // dynamic target assigned after post creation
                 break;
             case 'vcard':
                 $v = [
@@ -552,7 +601,6 @@ class RightWin_QR_Portal {
                     'url'=>esc_url_raw($_POST['ct_v_url'] ?? '')
                 ];
                 $payload = "BEGIN:VCARD\nVERSION:3.0\nFN:{$v['name']}\nTITLE:{$v['title']}\nORG:{$v['org']}\nTEL:{$v['tel']}\nEMAIL:{$v['email']}\nURL:{$v['url']}\nEND:VCARD";
-                if ($type==='dynamic') $target = home_url('/');
                 break;
             case 'catalogue':
                 $c = esc_url_raw($_POST['ct_catalogue_url'] ?? '');
@@ -563,8 +611,7 @@ class RightWin_QR_Portal {
                 $cur = sanitize_text_field($_POST['ct_price_currency'] ?? 'INR');
                 $url = esc_url_raw($_POST['ct_price_url'] ?? '');
                 $text = "PRICE: {$amt} {$cur}" . ($url ? " | BUY: {$url}" : "");
-                if ($type==='dynamic') { $target = $url ?: home_url('/'); $payload = $text; }
-                else $payload = $text;
+                $payload = $text; // dynamic target assigned after post creation
                 break;
             case 'social':
                 $fb = esc_url_raw($_POST['ct_social_fb'] ?? '');
@@ -573,8 +620,7 @@ class RightWin_QR_Portal {
                 $wa = sanitize_text_field($_POST['ct_social_wa'] ?? '');
                 $tg = esc_url_raw($_POST['ct_social_tg'] ?? '');
                 $txt = "FB: {$fb}\nIG: {$ig}\nYT: {$yt}\nWA: {$wa}\nTG: {$tg}";
-                if ($type==='dynamic') { $payload = $txt; $target = $fb ?: $ig ?: $yt ?: $tg ?: home_url('/'); }
-                else $payload = $txt;
+                $payload = $txt; // dynamic target assigned after post creation
                 break;
             case 'greview':
                 $pid = sanitize_text_field($_POST['ct_g_placeid'] ?? '');
@@ -586,7 +632,8 @@ class RightWin_QR_Portal {
                 break;
         }
 
-        if ($type==='dynamic' && empty($target) && $ct!=='file') return new WP_Error('missing','Please provide destination for dynamic QR.');
+        if ($type==='dynamic' && empty($target) && $ct!=='file' && !in_array($ct, ['text','vcard','social','price'], true))
+            return new WP_Error('missing','Please provide destination for dynamic QR.');
         if ($type==='static' && empty($payload)) return new WP_Error('missing','Please provide content for static QR.');
 
         // Create post
@@ -595,8 +642,11 @@ class RightWin_QR_Portal {
         ], true);
         if (is_wp_error($post_id)) return $post_id;
 
-        if ($type==='dynamic') { if (empty($alias)) $alias = $this->generate_unique_alias($post_id, $name); }
-        else { $alias = ''; }
+        if ($type==='dynamic') {
+            if (empty($alias)) $alias = $this->generate_unique_alias($post_id, $name);
+        } else {
+            $alias = '';
+        }
 
         // Handle logo upload (size check)
         $logo_id = 0;
@@ -620,6 +670,11 @@ class RightWin_QR_Portal {
                     if ($type==='dynamic') $target = $file_url; else $payload = $file_url;
                 } else return new WP_Error('missing','Please upload a file.');
             } else return new WP_Error('missing','Please upload a file.');
+        }
+
+        // For dynamic text-like content, point to landing page now that we have $post_id
+        if ($type === 'dynamic' && in_array($ct, ['text','vcard','social','price'], true)) {
+            $target = add_query_arg('rwqr_view', $post_id, home_url('/'));
         }
 
         // Save meta
@@ -666,7 +721,7 @@ class RightWin_QR_Portal {
                 $alias= get_post_meta($id,'alias',true);
                 $status=get_post_meta($id,'status',true) ?: 'active';
                 $scans=intval(get_post_meta($id,'scan_count',true));
-                $short = $alias ? home_url('/r/'.$alias) : '—';
+                $short = $alias ? $this->build_shortlink($alias) : '—';
                 $thumb = get_the_post_thumbnail_url($id,'medium');
                 echo '<tr><td>'.esc_html(get_the_title()).'</td>';
                 echo '<td>'.esc_html(ucfirst($type)).'</td>';
@@ -676,9 +731,11 @@ class RightWin_QR_Portal {
                 if ($thumb) {
                     echo '<a class="rwqr-btn" href="'.esc_url($thumb).'" download>Download PNG</a> ';
                     echo '<a class="rwqr-btn" href="'.esc_url(add_query_arg('rwqr_pdf',$id,home_url('/'))).'">Download PDF</a> ';
-                    $sharetext = rawurlencode('Scan this QR: '.$short);
-                    echo '<a class="rwqr-btn" target="_blank" href="https://api.whatsapp.com/send?text='.$sharetext.'">WhatsApp</a> ';
-                    echo '<a class="rwqr-btn" href="mailto:?subject=Your QR&body='.$sharetext.'">Email</a> ';
+                    if ($alias) {
+                        $sharetext = rawurlencode('Scan this QR: '.$short);
+                        echo '<a class="rwqr-btn" target="_blank" href="https://api.whatsapp.com/send?text='.$sharetext.'">WhatsApp</a> ';
+                        echo '<a class="rwqr-btn" href="mailto:?subject=Your QR&body='.$sharetext.'">Email</a> ';
+                    }
                 }
                 echo '<a class="rwqr-btn" href="'.esc_url(get_edit_post_link($id)).'">Edit</a>';
                 echo '</td></tr>';
@@ -751,7 +808,7 @@ class RightWin_QR_Portal {
         $m = $this->get_qr_meta($post_id);
         $size = 800;
         $data = ($m['type']==='dynamic')
-            ? ( $m['alias'] ? home_url('/r/'.$m['alias']) : '' )
+            ? ( $m['alias'] ? $this->build_shortlink($m['alias']) : '' )
             : ( $m['payload'] ?? '' );
         if (!$data) return 0;
 
