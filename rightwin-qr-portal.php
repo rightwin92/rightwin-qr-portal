@@ -74,16 +74,20 @@ class RightWin_QR_Portal {
 
     public function register_cpt() {
         register_post_type(self::CPT, [
-            'labels' => [
-                'name' => 'QR Codes',
-                'singular_name' => 'QR Code'
-            ],
-            'public' => false,
-            'show_ui' => true,
-            'menu_icon' => 'dashicons-qrcode',
-            'supports' => ['title', 'thumbnail', 'author'],
-            'capability_type' => 'post'
-        ]);
+    'labels' => [
+        'name' => 'QR Codes',
+        'singular_name' => 'QR Code'
+    ],
+    'public' => false,
+    'show_ui' => true,
+    'show_in_menu' => true,
+    'show_in_admin_bar' => true,
+    'menu_icon' => 'dashicons-qrcode',
+    'supports' => ['title', 'thumbnail', 'author'],
+    'capability_type' => 'post',
+    'map_meta_cap' => true, // <-- allow Authors to edit their own QR posts
+]);
+
     }
 
     public function add_rewrite() {
