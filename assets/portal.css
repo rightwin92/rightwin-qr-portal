@@ -1,0 +1,9 @@
+.rwqr-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.rwqr-btn{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #111;text-decoration:none}
+.rwqr-error{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:10px;margin-bottom:12px}
+.rwqr-success{background:#dcfce7;color:#065f46;border:1px solid #bbf7d0;padding:10px;border-radius:10px;margin-bottom:12px}
+.rwqr-auth{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.rwqr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rwqr-table{width:100%;border-collapse:collapse}
+.rwqr-table th,.rwqr-table td{border-bottom:1px solid #e5e7eb;padding:8px;text-align:left}
+@media (max-width:900px){.rwqr-auth{grid-template-columns:1fr}.rwqr-grid{grid-template-columns:1fr}}
