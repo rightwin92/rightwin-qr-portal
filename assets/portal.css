@@ -1,4 +1,4 @@
-/* RightWin QR Portal – minimal, clean UI */
+/* RightWin QR Portal – clean UI + paused badge */
 
 .rwqr-card{
   background:#fff;
@@ -56,3 +56,19 @@
   border-bottom:1px solid #e5e7eb; padding:10px 8px; text-align:left;
 }
 .rwqr-table th{ background:#f9fafb; font-weight:600; }
+
+/* NEW: Paused badge styling */
+.rwqr-status-badge{
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:12px;
+  font-size:12px;
+  font-weight:600;
+  line-height:1.4;
+}
+.rwqr-status-active{
+  background:#dcfce7; color:#065f46; border:1px solid #bbf7d0;
+}
+.rwqr-status-paused{
+  background:#fee2e2; color:#991b1b; border:1px solid #fecaca;
+}
