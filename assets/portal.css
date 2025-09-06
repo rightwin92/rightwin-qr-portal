@@ -1,9 +1,58 @@
-.rwqr-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-.rwqr-btn{display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #111;text-decoration:none}
-.rwqr-error{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:10px;margin-bottom:12px}
-.rwqr-success{background:#dcfce7;color:#065f46;border:1px solid #bbf7d0;padding:10px;border-radius:10px;margin-bottom:12px}
-.rwqr-auth{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-.rwqr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.rwqr-table{width:100%;border-collapse:collapse}
-.rwqr-table th,.rwqr-table td{border-bottom:1px solid #e5e7eb;padding:8px;text-align:left}
-@media (max-width:900px){.rwqr-auth{grid-template-columns:1fr}.rwqr-grid{grid-template-columns:1fr}}
+/* RightWin QR Portal – minimal, clean UI */
+
+.rwqr-card{
+  background:#fff;
+  border:1px solid #e5e7eb;
+  border-radius:12px;
+  padding:16px 18px;
+  margin:16px 0;
+  box-shadow:0 2px 6px rgba(0,0,0,.04);
+}
+.rwqr-auth{ display:grid; grid-template-columns:1fr; gap:16px; }
+@media (min-width: 900px){
+  .rwqr-auth{ grid-template-columns: 1fr 1fr 1fr; }
+}
+
+.rwqr-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+}
+@media (max-width: 720px){
+  .rwqr-grid{ grid-template-columns: 1fr; }
+}
+
+.rwqr-card h3{ margin:0 0 10px; font-size:18px; }
+.rwqr-card p{ margin:8px 0; }
+
+.rwqr-btn{
+  display:inline-block;
+  background:#111827;
+  color:#fff !important;
+  padding:8px 12px;
+  border-radius:8px;
+  text-decoration:none;
+  border:1px solid #111827;
+  transition:transform .02s ease-in;
+  font-size:14px;
+  line-height:1.2;
+  margin:2px 4px 2px 0;
+}
+.rwqr-btn:hover{ background:#000; transform:translateY(-1px); }
+
+.rwqr-error{
+  background:#fee2e2; border:1px solid #fecaca; color:#991b1b;
+  padding:10px 12px; border-radius:8px; margin:10px 0;
+}
+.rwqr-success{
+  background:#dcfce7; border:1px solid #bbf7d0; color:#14532d;
+  padding:10px 12px; border-radius:8px; margin:10px 0;
+}
+
+.rwqr-table{
+  width:100%; border-collapse:collapse; font-size:14px;
+}
+.rwqr-table th, .rwqr-table td{
+  border-bottom:1px solid #e5e7eb; padding:10px 8px; text-align:left;
+}
+.rwqr-table th{ background:#f9fafb; font-weight:600; }
