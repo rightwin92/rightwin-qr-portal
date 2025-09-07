@@ -1,132 +1,104 @@
 <?php
 /*
 Plugin Name: RightWin QR Portal
-Description: QR code portal with dynamic redirects, analytics, Elementor-safe shortcodes, quick-edit dashboard, admin/user controls, Q/A form, and Form content type with submissions. Safe-Boot version.
-Version: 1.5.2
+Description: QR code portal with dynamic redirects, analytics, Elementor-safe shortcodes, quick-edit dashboard, admin/user controls, Q/A form, and Form content type with submissions. Compat build.
+Version: 1.5.3-compat
 Author: RIGHT WIN MEDIAS
 Text Domain: rightwin-qr-portal
 */
 
 if (!defined('ABSPATH')) exit;
 
-/* ============================================================
-   SAFE-BOOT PRECHECK (prevents blank fatal screens on activation)
-   ============================================================ */
-if (!defined('RIGHTWIN_QR_PORTAL_SAFEBOOT')) define('RIGHTWIN_QR_PORTAL_SAFEBOOT', '1.5.2');
+/* ------------------------------------------------------------------
+   COMPAT FLAGS (default SAFE). You may set these to false later.
+   ------------------------------------------------------------------ */
+if (!defined('RWQR_DISABLE_IMAGICK')) define('RWQR_DISABLE_IMAGICK', true); // true = never use Imagick
+if (!defined('RWQR_DISABLE_TTF'))     define('RWQR_DISABLE_TTF',     true); // true = use bitmap text (no FreeType)
+if (!defined('RWQR_DEFER_REWRITE'))   define('RWQR_DEFER_REWRITE',   true); // true = skip flush on activate
 
-/** Prevent accidental double load via duplicate plugin folders */
-if (defined('RIGHTWIN_QR_PORTAL_LOADED')) {
-    // Already loaded by another copy; do not fatal.
-    return;
-}
+/* ------------------------------------------------------------------
+   SAFE-BOOT GUARDS (no fatals on activation; show notices instead)
+   ------------------------------------------------------------------ */
+if (!defined('RIGHTWIN_QR_PORTAL_SAFEBOOT')) define('RIGHTWIN_QR_PORTAL_SAFEBOOT', '1.5.3-compat');
+if (defined('RIGHTWIN_QR_PORTAL_LOADED')) { return; }
 define('RIGHTWIN_QR_PORTAL_LOADED', true);
 
-/** Collect activation errors and show as admin_notice without fatal */
-function rwqrp_fail_activate($message) {
-    if (!function_exists('deactivate_plugins')) require_once ABSPATH . 'wp-admin/includes/plugin.php';
-    deactivate_plugins(plugin_basename(__FILE__));
-    add_action('admin_notices', function() use ($message) {
-        echo '<div class="notice notice-error"><p><strong>RightWin QR Portal:</strong> ' . esc_html($message) . '</p></div>';
+function rwqrp_admin_notice($msg, $type = 'error'){
+    add_action('admin_notices', function() use ($msg, $type){
+        $cls = $type === 'success' ? 'notice-success' : ($type === 'warning' ? 'notice-warning' : 'notice-error');
+        echo '<div class="notice ' . esc_attr($cls) . '"><p><strong>RightWin QR Portal:</strong> ' . wp_kses_post($msg) . '</p></div>';
     });
 }
 
-global $wp_version;
-$need_errors = [];
-
-/** Basic requirements */
-if (version_compare(PHP_VERSION, '7.4', '<')) {
-    $need_errors[] = 'Requires PHP 7.4 or newer. Your server has ' . PHP_VERSION . '.';
-}
-if (version_compare($wp_version, '5.8', '<')) {
-    $need_errors[] = 'Requires WordPress 5.8 or newer. Your site has ' . $wp_version . '.';
-}
-/** GD for image manipulation (QR composition and TTF titles) */
-if (!function_exists('imagecreatetruecolor') || !function_exists('imagecreatefromstring')) {
-    $need_errors[] = 'PHP GD extension is missing. Please enable GD in your hosting control panel.';
-}
-
-/** Stop early if something’s missing (only on activation) */
-if (isset($_GET['action'], $_GET['plugin']) && $_GET['action'] === 'activate' && strpos($_GET['plugin'], plugin_basename(__FILE__)) !== false) {
-    if (!empty($need_errors)) {
-        rwqrp_fail_activate(implode(' ', $need_errors));
-        return;
-    }
-}
-
-/* ============================================================
-   MAIN PLUGIN (same features as v1.5.0, with extra guards)
-   ============================================================ */
-
+/* ------------------------------------------------------------------
+   MAIN PLUGIN
+   ------------------------------------------------------------------ */
 if (!class_exists('RightWin_QR_Portal')) :
 
 class RightWin_QR_Portal {
-
-    const VERSION = '1.5.2';
+    const VERSION = '1.5.3-compat';
     const CPT = 'rwqr';
     const TABLE_SCANS = 'rwqr_scans';
     const OPTION_SETTINGS = 'rwqr_settings';
-    const USER_PAUSED_META = 'rwqr_paused'; // 1/0
-    const META_ADMIN_LOCKED = 'admin_locked'; // 1=paused by admin
+    const USER_PAUSED_META = 'rwqr_paused';
+    const META_ADMIN_LOCKED = 'admin_locked';
 
     const CPT_QA = 'rwqr_qa';
-    const CPT_FORM_ENTRY = 'rwqr_form_entry'; // submissions for "Form" content
+    const CPT_FORM_ENTRY = 'rwqr_form_entry';
 
-    public function __construct() {
-        // Hooks are inside try-catch to avoid throwing during load
-        try {
-            register_activation_hook(__FILE__, [$this, 'activate']);
-            register_deactivation_hook(__FILE__, [$this, 'deactivate']);
+    public function __construct(){
+        // Activation / deactivation
+        register_activation_hook(__FILE__, [$this, 'activate']);
+        register_deactivation_hook(__FILE__, [$this, 'deactivate']);
 
-            add_action('init', [$this, 'register_cpts']);
-            add_action('init', [$this, 'add_rewrite']);
-            add_filter('query_vars', [$this, 'query_vars']);
-            add_action('init', [$this, 'ensure_author_caps']);
+        // Core
+        add_action('init', [$this, 'register_cpts']);
+        add_action('init', [$this, 'add_rewrite']);
+        add_filter('query_vars', [$this, 'query_vars']);
+        add_action('init', [$this, 'ensure_author_caps']);
 
-            add_action('template_redirect', [$this, 'handle_redirect']);
-            add_action('template_redirect', [$this, 'handle_pdf']);
-            add_action('template_redirect', [$this, 'handle_view']);
+        // Routing
+        add_action('template_redirect', [$this, 'handle_redirect']);
+        add_action('template_redirect', [$this, 'handle_pdf']);
+        add_action('template_redirect', [$this, 'handle_view']);
 
-            add_action('admin_menu', [$this, 'admin_menu']);
-            add_action('admin_post_rwqr_toggle', [$this, 'admin_toggle_qr']);
-            add_action('admin_post_rwqr_delete', [$this, 'admin_delete_qr']);
+        // Admin menus & actions
+        add_action('admin_menu', [$this, 'admin_menu']);
+        add_action('admin_post_rwqr_toggle', [$this, 'admin_toggle_qr']);
+        add_action('admin_post_rwqr_delete', [$this, 'admin_delete_qr']);
+        add_action('admin_post_rwqr_user_toggle', [$this, 'admin_user_toggle']);
+        add_action('admin_post_rwqr_user_delete', [$this, 'admin_user_delete']);
 
-            add_action('admin_post_rwqr_user_toggle', [$this, 'admin_user_toggle']);
-            add_action('admin_post_rwqr_user_delete', [$this, 'admin_user_delete']);
+        // Owner actions
+        add_action('admin_post_rwqr_owner_toggle', [$this, 'owner_toggle_qr']);
+        add_action('admin_post_nopriv_rwqr_owner_toggle', [$this, 'owner_toggle_qr_nopriv']);
+        add_action('admin_post_rwqr_owner_delete', [$this, 'owner_delete_qr']);
+        add_action('admin_post_nopriv_rwqr_owner_delete', [$this, 'owner_owner_delete_nopriv']);
 
-            add_action('admin_post_rwqr_owner_toggle', [$this, 'owner_toggle_qr']);
-            add_action('admin_post_nopriv_rwqr_owner_toggle', [$this, 'owner_toggle_qr_nopriv']);
-            add_action('admin_post_rwqr_owner_delete', [$this, 'owner_delete_qr']);
-            add_action('admin_post_nopriv_rwqr_owner_delete', [$this, 'owner_owner_delete_nopriv']);
+        // Meta boxes
+        add_action('add_meta_boxes', [$this, 'add_meta_boxes']);
+        add_action('save_post_' . self::CPT, [$this, 'save_meta'], 10, 2);
 
-            add_action('add_meta_boxes', [$this, 'add_meta_boxes']);
-            add_action('save_post_' . self::CPT, [$this, 'save_meta'], 10, 2]);
+        // Shortcodes
+        add_shortcode('rwqr_portal', [$this, 'sc_portal']);
+        add_shortcode('rwqr_wizard', [$this, 'sc_wizard']);
+        add_shortcode('rwqr_dashboard', [$this, 'sc_dashboard']);
+        add_shortcode('rwqr_qa', [$this, 'sc_qa']);
 
-            add_shortcode('rwqr_portal', [$this, 'sc_portal']);
-            add_shortcode('rwqr_wizard', [$this, 'sc_wizard']);
-            add_shortcode('rwqr_dashboard', [$this, 'sc_dashboard']);
-            add_shortcode('rwqr_qa', [$this, 'sc_qa']);
+        // Assets & footer
+        add_action('wp_enqueue_scripts', [$this, 'enqueue']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin']);
+        add_action('wp_footer', [$this, 'footer_disclaimer']);
 
-            add_action('wp_enqueue_scripts', [$this, 'enqueue']);
-            add_action('admin_enqueue_scripts', [$this, 'enqueue_admin']);
-            add_action('wp_footer', [$this, 'footer_disclaimer']);
-        } catch (\Throwable $e) {
-            // Surface errors as admin notice instead of fatal
-            add_action('admin_notices', function() use ($e) {
-                echo '<div class="notice notice-error"><p><strong>RightWin QR Portal failed to initialize:</strong> '
-                    . esc_html($e->getMessage()) . '</p></div>';
-            });
-        }
+        // Soft requirement checks (no fatal)
+        add_action('admin_init', [$this, 'soft_requirements_check']);
     }
 
-    /* ================= Activation & DB ================= */
-    public function activate() {
+    /* ---------------- Activation / DB ---------------- */
+    public function activate(){
         global $wpdb;
-        // Re-run requirement checks on activation
-        if (!function_exists('imagecreatetruecolor') || !function_exists('imagecreatefromstring')) {
-            rwqrp_fail_activate('PHP GD extension is required. Please enable GD and try again.');
-            return;
-        }
 
+        // Create scans table
         $table = $wpdb->prefix . self::TABLE_SCANS;
         $charset = $wpdb->get_charset_collate();
         $sql = "CREATE TABLE IF NOT EXISTS `$table` (
@@ -144,61 +116,64 @@ class RightWin_QR_Portal {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
 
-        $this->add_rewrite();
-        flush_rewrite_rules();
-        $this->ensure_author_caps();
+        // Prime rewrite rules (no flush if compat flag says so)
+        if (!RWQR_DEFER_REWRITE) {
+            $this->add_rewrite();
+            flush_rewrite_rules();
+        }
     }
-    public function deactivate() { flush_rewrite_rules(); }
+    public function deactivate(){
+        // Keep data; just flush if not deferred
+        if (!RWQR_DEFER_REWRITE) flush_rewrite_rules();
+    }
 
-    /* ================= CPT & Rewrite ================= */
-    public function register_cpts() {
+    /* ---------------- CPTs & Rewrite ---------------- */
+    public function register_cpts(){
         register_post_type(self::CPT, [
-            'labels' => [ 'name' => 'QR Codes', 'singular_name' => 'QR Code' ],
-            'public' => false, 'show_ui' => true, 'show_in_menu' => true,
-            'show_in_admin_bar' => true, 'menu_icon' => 'dashicons-qrcode',
-            'supports' => ['title', 'thumbnail', 'author'],
-            'capability_type' => 'post', 'map_meta_cap' => true,
+            'labels'=>['name'=>'QR Codes','singular_name'=>'QR Code'],
+            'public'=>false,'show_ui'=>true,'show_in_menu'=>true,'menu_icon'=>'dashicons-qrcode',
+            'supports'=>['title','thumbnail','author'],'capability_type'=>'post','map_meta_cap'=>true
         ]);
         register_post_type(self::CPT_QA, [
-            'labels' => [ 'name' => 'QR Q/A', 'singular_name' => 'QR Question' ],
-            'public' => false, 'show_ui' => true, 'menu_icon' => 'dashicons-editor-help',
-            'supports' => ['title', 'editor', 'author'],
+            'labels'=>['name'=>'QR Q/A','singular_name'=>'QR Question'],
+            'public'=>false,'show_ui'=>true,'menu_icon'=>'dashicons-editor-help','supports'=>['title','editor','author']
         ]);
         register_post_type(self::CPT_FORM_ENTRY, [
-            'labels' => [ 'name' => 'Form Entries', 'singular_name' => 'Form Entry' ],
-            'public' => false, 'show_ui' => true, 'menu_icon' => 'dashicons-feedback',
-            'supports' => ['title', 'editor', 'author', 'page-attributes'],
+            'labels'=>['name'=>'Form Entries','singular_name'=>'Form Entry'],
+            'public'=>false,'show_ui'=>true,'menu_icon'=>'dashicons-feedback','supports'=>['title','editor','author','page-attributes']
         ]);
     }
-    public function add_rewrite() {
+    public function add_rewrite(){
         add_rewrite_tag('%rwqr_alias%', '([^&]+)');
         add_rewrite_rule('^r/([^/]+)/?', 'index.php?rwqr_alias=$matches[1]', 'top');
     }
-    public function query_vars($vars) {
+    public function query_vars($vars){
         $vars[] = 'rwqr_alias'; $vars[] = 'rwqr_pdf'; $vars[] = 'rwqr_view'; $vars[] = 'entries';
         return $vars;
     }
+    public function ensure_author_caps(){
+        // default WP author is OK
+    }
 
-    /* ================= Helpers ================= */
-    private function build_shortlink($alias) {
-        $alias = ltrim((string)$alias, '/');
+    /* ---------------- Utilities ---------------- */
+    private function build_shortlink($alias){
+        $alias = ltrim((string)$alias,'/');
         $pretty = get_option('permalink_structure');
-        if (!empty($pretty)) return home_url('r/' . $alias);
+        if (!empty($pretty)) return home_url('r/'.$alias);
         return add_query_arg('rwqr_alias', $alias, home_url('/'));
     }
-    private function normalize_url($url) {
-        $url = trim((string)$url);
-        if ($url === '') return '';
+    private function normalize_url($url){
+        $url = trim((string)$url); if ($url==='') return '';
         if (preg_match('~^[a-z][a-z0-9+\-.]*://~i', $url)) return $url;
-        if (strpos($url, '//') === 0) return 'https:' . $url;
-        return 'https://' . $url;
+        if (strpos($url,'//')===0) return 'https:'.$url;
+        return 'https://'.$url;
     }
-    private function is_user_paused($user_id) {
+    private function is_user_paused($user_id){
         return intval(get_user_meta($user_id, self::USER_PAUSED_META, true)) === 1;
     }
 
-    /* ================= Redirect / PDF / View ================= */
-    public function handle_redirect() {
+    /* ---------------- Routing: redirect / pdf / view ---------------- */
+    public function handle_redirect(){
         $alias = get_query_var('rwqr_alias');
         if (!$alias && isset($_GET['rwqr_alias'])) $alias = sanitize_title($_GET['rwqr_alias']);
         if (!$alias) return;
@@ -228,7 +203,8 @@ class RightWin_QR_Portal {
 
         wp_redirect(esc_url_raw($target), 302); exit;
     }
-    public function handle_pdf() {
+
+    public function handle_pdf(){
         $id = absint(get_query_var('rwqr_pdf')); if (!$id) return;
         $qr = get_post($id);
         if (!$qr || $qr->post_type !== self::CPT) { status_header(404); echo 'Not found'; exit; }
@@ -239,7 +215,7 @@ class RightWin_QR_Portal {
         $img_path = get_attached_file($thumb_id);
         if (!file_exists($img_path)) { status_header(404); echo 'File missing'; exit; }
 
-        if (class_exists('Imagick')) {
+        if (!RWQR_DISABLE_IMAGICK && class_exists('Imagick')) {
             try {
                 $im = new \Imagick();
                 $im->readImage($img_path);
@@ -248,13 +224,14 @@ class RightWin_QR_Portal {
                 header('Content-Disposition: attachment; filename="qr-'.$id.'.pdf"');
                 echo $im->getImagesBlob();
                 $im->clear(); $im->destroy(); exit;
-            } catch (\Throwable $e) { /* fallback */ }
+            } catch (\Throwable $e) { /* fall back */ }
         }
         header('Content-Type: image/png');
         header('Content-Disposition: attachment; filename="qr-'.$id.'.png"');
         readfile($img_path); exit;
     }
-    public function handle_view() {
+
+    public function handle_view(){
         $view_id = absint(get_query_var('rwqr_view')); if (!$view_id) return;
         $qr = get_post($view_id);
         if (!$qr || $qr->post_type !== self::CPT) { status_header(404); echo 'Not found'; exit; }
@@ -299,7 +276,8 @@ class RightWin_QR_Portal {
         exit;
     }
 
-    private function render_entries_list_for_owner($qr_id, $title) {
+    /* ---------------- Rendering helpers ---------------- */
+    private function render_entries_list_for_owner($qr_id, $title){
         $q = new WP_Query([
             'post_type'=>self::CPT_FORM_ENTRY,'post_status'=>'publish','posts_per_page'=>50,'post_parent'=>$qr_id,
             'orderby'=>'menu_order','order'=>'DESC'
@@ -317,12 +295,12 @@ class RightWin_QR_Portal {
         } else echo '<p>No entries yet.</p>';
         echo '</div></body></html>';
     }
-    private function render_form_thanks($title, $short) {
+    private function render_form_thanks($title, $short){
         echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Thank you — '.esc_html($title).'</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:24px;background:#fafafa;color:#111} .card{background:#fff;border:1px solid #eee;border-radius:12px;max-width:760px;margin:0 auto;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.04)} .muted{opacity:.7;font-size:12px}</style></head><body><div class="card"><h2 style="margin-top:0">Thanks!</h2><p>Your response has been recorded.</p>';
         if ($short) echo '<p class="muted">Ref: <a href="'.esc_url($short).'">'.esc_html($short).'</a></p>';
         echo '</div></body></html>';
     }
-    private function render_landing($post_id, $title, $ct, $payload, $short) {
+    private function render_landing($post_id, $title, $ct, $payload, $short){
         $is_vcard = (stripos($payload, 'BEGIN:VCARD') !== false);
         echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'.$title.'</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:24px;background:#fafafa;color:#111} .card{background:#fff;border:1px solid #eee;border-radius:12px;max-width:760px;margin:0 auto;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.04)} .btn{display:inline-block;padding:10px 14px;border-radius:8px;border:1px solid #111;text-decoration:none} .list a{display:block;margin:6px 0} .muted{opacity:.7;font-size:12px}</style></head><body><div class="card"><h2 style="margin-top:0">'.$title.'</h2>';
         if ($ct === 'text') {
@@ -370,20 +348,21 @@ class RightWin_QR_Portal {
         echo '</div></body></html>';
     }
 
-    private function record_scan($qr_id, $alias) {
+    /* ---------------- Scan log ---------------- */
+    private function record_scan($qr_id, $alias){
         global $wpdb;
         $table = $wpdb->prefix . self::TABLE_SCANS;
         $ip = isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field($_SERVER['REMOTE_ADDR']) : '';
         $ua = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_textarea_field($_SERVER['HTTP_USER_AGENT']) : '';
         $ref = isset($_SERVER['HTTP_REFERER']) ? sanitize_textarea_field($_SERVER['HTTP_REFERER']) : '';
         $wpdb->insert($table, [
-            'qr_id' => $qr_id, 'alias' => $alias, 'scanned_at' => current_time('mysql'),
-            'ip' => $ip, 'ua' => $ua, 'referrer' => $ref,
+            'qr_id'=>$qr_id,'alias'=>$alias,'scanned_at'=>current_time('mysql'),
+            'ip'=>$ip,'ua'=>$ua,'referrer'=>$ref
         ]);
     }
 
-    /* ================= Admin UI (incl. User controls) ================= */
-    public function admin_menu() {
+    /* ---------------- Admin UI ---------------- */
+    public function admin_menu(){
         add_menu_page('RightWin QR', 'RightWin QR', 'manage_options', 'rwqr-admin', [$this, 'admin_page'], 'dashicons-qrcode', 56);
         add_submenu_page('rwqr-admin', 'All QR Codes', 'All QR Codes', 'manage_options', 'edit.php?post_type=' . self::CPT);
         add_submenu_page('rwqr-admin', 'Users', 'Users', 'manage_options', 'rwqr-users', [$this, 'admin_users']);
@@ -391,9 +370,9 @@ class RightWin_QR_Portal {
         add_submenu_page('rwqr-admin', 'Q/A', 'Q/A', 'manage_options', 'edit.php?post_type=' . self::CPT_QA);
         add_submenu_page('rwqr-admin', 'Settings', 'Settings', 'manage_options', 'rwqr-settings', [$this, 'admin_settings']);
     }
-    public function admin_page() {
+    public function admin_page(){
         echo '<div class="wrap"><h1>RightWin QR — Overview</h1><p>Manage QR codes or switch to <a href="'.esc_url(admin_url('admin.php?page=rwqr-users')).'">Users</a>, <a href="'.esc_url(admin_url('edit.php?post_type='.self::CPT_FORM_ENTRY)).'">Form Entries</a>, <a href="'.esc_url(admin_url('edit.php?post_type='.self::CPT_QA)).'">Q/A</a>.</p>';
-        $q = new WP_Query(['post_type' => self::CPT, 'posts_per_page' => 50, 'post_status' => 'any']);
+        $q = new WP_Query(['post_type'=>self::CPT, 'posts_per_page'=>50, 'post_status'=>'any']);
         if ($q->have_posts()) {
             echo '<table class="widefat striped"><thead><tr><th>Title</th><th>Owner</th><th>Alias</th><th>Status</th><th>Scans</th><th>Actions</th></tr></thead><tbody>';
             while ($q->have_posts()) { $q->the_post();
@@ -423,9 +402,8 @@ class RightWin_QR_Portal {
         } else echo '<p>No QR codes yet.</p>';
         echo '</div>';
     }
-    public function admin_users() {
+    public function admin_users(){
         if (!current_user_can('manage_options')) wp_die('No permission');
-
         $paged = max(1, intval($_GET['paged'] ?? 1));
         $per_page = 20;
         $user_query = new WP_User_Query(['number'=>$per_page,'paged'=>$paged,'orderby'=>'user_registered','order'=>'DESC','fields'=>'all']);
@@ -466,7 +444,7 @@ class RightWin_QR_Portal {
         } else echo '<p>No users found.</p>';
         echo '</div>';
     }
-    public function admin_user_toggle() {
+    public function admin_user_toggle(){
         if (!current_user_can('manage_options')) wp_die('No permission');
         $uid = absint($_GET['user'] ?? 0);
         check_admin_referer('rwqr_user_toggle_' . $uid);
@@ -474,7 +452,7 @@ class RightWin_QR_Portal {
         update_user_meta($uid, self::USER_PAUSED_META, $paused ? 0 : 1);
         wp_safe_redirect(admin_url('admin.php?page=rwqr-users')); exit;
     }
-    public function admin_user_delete() {
+    public function admin_user_delete(){
         if (!current_user_can('delete_users')) wp_die('No permission');
         $uid = absint($_GET['user'] ?? 0);
         check_admin_referer('rwqr_user_delete_' . $uid);
@@ -483,11 +461,11 @@ class RightWin_QR_Portal {
         wp_safe_redirect(admin_url('admin.php?page=rwqr-users')); exit;
     }
 
-    /* ================= Owner Actions ================= */
-    public function owner_toggle_qr_nopriv() { wp_safe_redirect(site_url('/portal')); exit; }
-    public function owner_owner_delete_nopriv() { wp_safe_redirect(site_url('/portal')); exit; }
+    /* ---------------- Owner actions ---------------- */
+    public function owner_toggle_qr_nopriv(){ wp_safe_redirect(site_url('/portal')); exit; }
+    public function owner_owner_delete_nopriv(){ wp_safe_redirect(site_url('/portal')); exit; }
 
-    public function owner_toggle_qr() {
+    public function owner_toggle_qr(){
         if (!is_user_logged_in()) { wp_safe_redirect(site_url('/portal')); exit; }
         $post_id = absint($_POST['rwqr_id'] ?? 0);
         check_admin_referer('rwqr_owner_toggle_' . $post_id);
@@ -508,7 +486,7 @@ class RightWin_QR_Portal {
 
         wp_safe_redirect(add_query_arg(['_'=>time(),'notice'=>'toggled'], site_url('/dashboard'))); exit;
     }
-    public function owner_delete_qr() {
+    public function owner_delete_qr(){
         if (!is_user_logged_in()) { wp_safe_redirect(site_url('/portal')); exit; }
         $post_id = absint($_POST['rwqr_id'] ?? 0);
         check_admin_referer('rwqr_owner_delete_' . $post_id);
@@ -527,10 +505,11 @@ class RightWin_QR_Portal {
         wp_safe_redirect(add_query_arg(['notice'=>'deleted','_'=>time()], site_url('/dashboard'))); exit;
     }
 
-    public function admin_settings() {
+    /* ---------------- Settings ---------------- */
+    public function admin_settings(){
         if (isset($_POST['rwqr_settings_nonce']) && wp_verify_nonce($_POST['rwqr_settings_nonce'], 'rwqr_save_settings')) {
             $settings = [
-                'max_logo_mb' => max(0, floatval($_POST['max_logo_mb'] ?? 2)),
+                'max_logo_mb'  => max(0, floatval($_POST['max_logo_mb'] ?? 2)),
                 'contact_html' => wp_kses_post($_POST['contact_html'] ?? '')
             ];
             update_option(self::OPTION_SETTINGS, $settings);
@@ -552,18 +531,16 @@ class RightWin_QR_Portal {
         </div><?php
     }
 
-    /* ================= Meta Boxes ================= */
-    public function add_meta_boxes() {
+    /* ---------------- Meta Boxes ---------------- */
+    public function add_meta_boxes(){
         add_meta_box('rwqr_meta', 'QR Settings', [$this, 'render_meta'], self::CPT, 'normal', 'default');
     }
-    public function render_meta($post) {
+    public function render_meta($post){
         wp_nonce_field('rwqr_save_meta', 'rwqr_meta_nonce');
         $m = $this->get_qr_meta($post->ID);
         $title_font_px = intval(get_post_meta($post->ID,'title_font_px',true));
         if ($title_font_px <= 0) $title_font_px = 28;
-
         $admin_locked = intval(get_post_meta($post->ID, self::META_ADMIN_LOCKED, true)) === 1;
-
         ?>
         <style>.rwqr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}</style>
         <div class="rwqr-grid">
@@ -609,7 +586,7 @@ class RightWin_QR_Portal {
         <p><em>Save to regenerate the QR PNG.</em></p>
         <?php
     }
-    public function save_meta($post_id, $post) {
+    public function save_meta($post_id, $post){
         if (!isset($_POST['rwqr_meta_nonce']) || !wp_verify_nonce($_POST['rwqr_meta_nonce'],'rwqr_save_meta')) return;
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
         if (!current_user_can('edit_post', $post_id)) return;
@@ -633,27 +610,24 @@ class RightWin_QR_Portal {
         if ($png_id) set_post_thumbnail($post_id, $png_id);
     }
 
-    /* ================= Assets ================= */
-    public function enqueue() {
+    /* ---------------- Assets ---------------- */
+    public function enqueue(){
         wp_enqueue_style('rwqr-portal', plugins_url('assets/portal.css', __FILE__), [], self::VERSION);
         wp_enqueue_script('rwqr-portal', plugins_url('assets/portal.js', __FILE__), ['jquery'], self::VERSION, true);
         $settings = get_option(self::OPTION_SETTINGS, ['max_logo_mb'=>2]);
         wp_localize_script('rwqr-portal', 'rwqrPortal', ['maxLogoMB' => floatval($settings['max_logo_mb'] ?? 2)]);
     }
-    public function enqueue_admin() {
+    public function enqueue_admin(){
         wp_enqueue_style('rwqr-portal', plugins_url('assets/portal.css', __FILE__), [], self::VERSION);
     }
-    private function is_elementor_edit() {
+    private function is_elementor_edit(){
         if (!defined('ELEMENTOR_VERSION')) return false;
-        try {
-            return class_exists('\Elementor\Plugin') &&
-                \Elementor\Plugin::$instance->editor &&
-                \Elementor\Plugin::$instance->editor->is_edit_mode();
-        } catch (\Throwable $e) { return false; }
+        try { return class_exists('\Elementor\Plugin') && \Elementor\Plugin::$instance->editor && \Elementor\Plugin::$instance->editor->is_edit_mode(); }
+        catch (\Throwable $e){ return false; }
     }
 
-    /* ================= Shortcodes: Portal / Wizard / Dashboard / QA ================= */
-    public function sc_portal($atts, $content = '') {
+    /* ---------------- Shortcodes ---------------- */
+    public function sc_portal($atts, $content = ''){
         if ($this->is_elementor_edit()) return '<div class="rwqr-card"><h3>Portal Preview</h3><p>Login / Register / Forgot forms render on the live page.</p></div>';
         if (is_user_logged_in()) {
             return '<div class="rwqr-card"><h3>You are logged in</h3><p><a class="rwqr-btn" href="'.esc_url(get_permalink()).'?logout=1">Logout</a> <a class="rwqr-btn" href="'.esc_url(site_url('/dashboard')).'">Go to Dashboard</a></p></div>'
@@ -688,12 +662,12 @@ class RightWin_QR_Portal {
         }
         return $out;
     }
-    private function handle_logout() {
+    private function handle_logout(){
         if (isset($_GET['logout'])) { wp_logout(); wp_safe_redirect(get_permalink()); exit; }
         return '';
     }
 
-    public function sc_wizard($atts, $content = '') {
+    public function sc_wizard($atts, $content = ''){
         if ($this->is_elementor_edit()) return '<div class="rwqr-card"><h3>Create Wizard Preview</h3><p>Editor-safe placeholder.</p></div>';
         if (!is_user_logged_in()) return '<div class="rwqr-card"><p>Please <a href="'.esc_url(site_url('/portal')).'">login</a> first.</p></div>';
 
@@ -779,7 +753,7 @@ class RightWin_QR_Portal {
         return ob_get_clean();
     }
 
-    private function handle_wizard_submit() {
+    private function handle_wizard_submit(){
         $user = wp_get_current_user();
         if (!$user || 0 === $user->ID) return new WP_Error('not_logged_in','Please login.');
         if ($this->is_user_paused($user->ID)) return new WP_Error('paused','Your account is paused by admin.');
@@ -920,7 +894,7 @@ class RightWin_QR_Portal {
         return $post_id;
     }
 
-    private function handle_quick_edit() {
+    private function handle_quick_edit(){
         if (!isset($_POST['rwqr_quickedit_nonce']) || !wp_verify_nonce($_POST['rwqr_quickedit_nonce'],'rwqr_quickedit')) return;
         $id = absint($_POST['rwqr_id'] ?? 0); if (!$id) return;
 
@@ -958,7 +932,7 @@ class RightWin_QR_Portal {
         wp_safe_redirect(add_query_arg(['_'=>time(),'notice'=>'saved'], site_url('/dashboard'))); exit;
     }
 
-    public function sc_dashboard($atts, $content = '') {
+    public function sc_dashboard($atts, $content = ''){
         if ($this->is_elementor_edit()) return '<div class="rwqr-card"><h3>Dashboard Preview</h3><p>Editor-safe placeholder.</p></div>';
         if (!is_user_logged_in()) return '<div class="rwqr-card"><p>Please <a href="'.esc_url(site_url('/portal')).'">login</a> first.</p></div>';
 
@@ -1017,7 +991,7 @@ class RightWin_QR_Portal {
                     echo '<a class="rwqr-btn" href="'.esc_url(add_query_arg('rwqr_pdf',$id,home_url('/'))).'">PDF</a> ';
                     if ($alias) {
                         $share_body = rawurlencode('Scan this QR: '.$short);
-                        $mailto = 'mailto:?subject='.rawurlencode('Your QR'). '&body='.$share_body;
+                        $mailto = 'mailto:?subject='.rawurlencode('Your QR').'&body='.$share_body;
                         echo '<a class="rwqr-btn" target="_blank" href="https://api.whatsapp.com/send?text='.$share_body.'">WhatsApp</a> ';
                         echo '<a class="rwqr-btn" href="'.$mailto.'">Email</a> ';
                     }
@@ -1066,7 +1040,7 @@ class RightWin_QR_Portal {
         return ob_get_clean();
     }
 
-    public function sc_qa($atts, $content='') {
+    public function sc_qa($atts, $content=''){
         if ($this->is_elementor_edit()) return '<div class="rwqr-card"><h3>Q/A Form Preview</h3><p>Users can send questions on the live page.</p></div>';
         if (!is_user_logged_in()) return '<div class="rwqr-card"><p>Please <a href="'.esc_url(site_url('/portal')).'">login</a> to submit a question.</p></div>';
 
@@ -1091,8 +1065,8 @@ class RightWin_QR_Portal {
         return ob_get_clean();
     }
 
-    /* ================= Upload helpers ================= */
-    private function create_attachment_from_upload($upload, $post_id) {
+    /* ---------------- Upload helpers ---------------- */
+    private function create_attachment_from_upload($upload, $post_id){
         $filetype = wp_check_filetype($upload['file'], null);
         $attachment = ['post_mime_type'=>$filetype['type'],'post_title'=>sanitize_file_name(basename($upload['file'])),'post_content'=>'','post_status'=>'inherit'];
         $attach_id = wp_insert_attachment($attachment, $upload['file'], $post_id);
@@ -1101,12 +1075,12 @@ class RightWin_QR_Portal {
         wp_update_attachment_metadata($attach_id, $attach_data);
         return $attach_id;
     }
-    private function get_qr_by_alias($alias) {
+    private function get_qr_by_alias($alias){
         $q = new WP_Query(['post_type'=>self::CPT,'meta_key'=>'alias','meta_value'=>$alias,'posts_per_page'=>1,'post_status'=>'publish']);
         if ($q->have_posts()) { $q->the_post(); $p = get_post(); wp_reset_postdata(); return $p; }
         return null;
     }
-    private function get_qr_meta($post_id) {
+    private function get_qr_meta($post_id){
         return [
             'type'=>get_post_meta($post_id,'type',true) ?: 'dynamic',
             'content_type'=>get_post_meta($post_id,'content_type',true) ?: 'link',
@@ -1125,25 +1099,30 @@ class RightWin_QR_Portal {
             'status'=>get_post_meta($post_id,'status',true) ?: 'active'
         ];
     }
-    private function generate_unique_alias($post_id, $seed='qr') {
+    private function generate_unique_alias($post_id, $seed='qr'){
         $base = sanitize_title($seed) ?: 'qr';
         $alias = $base; $i = 2;
         while ($this->get_qr_by_alias($alias)) { $alias = $base.'-'.$i; $i++; }
         return $alias;
     }
-    private function hex_to_rgb($hex) {
+    private function hex_to_rgb($hex){
         $hex = ltrim($hex,'#');
         if (strlen($hex)===3) { $r=hexdec(str_repeat($hex[0],2)); $g=hexdec(str_repeat($hex[1],2)); $b=hexdec(str_repeat($hex[2],2)); }
         else { $r=hexdec(substr($hex,0,2)); $g=hexdec(substr($hex,2,2)); $b=hexdec(substr($hex,4,2)); }
         return [$r,$g,$b];
     }
 
-    /* ================= PNG Generation ================= */
-    private function generate_and_attach_png($post_id) {
+    /* ---------------- PNG Generation ---------------- */
+    private function generate_and_attach_png($post_id){
         $m = $this->get_qr_meta($post_id);
         $size = 800;
         $data = ($m['type']==='dynamic') ? ( $m['alias'] ? $this->build_shortlink($m['alias']) : '' ) : ( $m['payload'] ?? '' );
         if (!$data) return 0;
+
+        if (!function_exists('imagecreatetruecolor') || !function_exists('imagecreatefromstring')) {
+            rwqrp_admin_notice('PHP GD extension is missing or limited. QR images cannot be generated until GD is enabled.', 'warning');
+            return 0;
+        }
 
         list($dr,$dg,$db) = $this->hex_to_rgb($m['dark']);
         list($lr,$lg,$lb) = $this->hex_to_rgb($m['light']);
@@ -1161,15 +1140,15 @@ class RightWin_QR_Portal {
         $body = wp_remote_retrieve_body($res);
         if (!$body) return 0;
 
-        if (!function_exists('imagecreatefromstring')) return 0; // GD missing
         $src = imagecreatefromstring($body);
         if (!$src) return 0;
 
         $top = trim((string)$m['title_top']); 
         $bottom = trim((string)$m['title_bottom']);
 
+        $use_ttf = false;
         $ttf = __DIR__ . '/assets/DejaVuSans.ttf';
-        $use_ttf = (function_exists('imagettftext') && file_exists($ttf));
+        if (!RWQR_DISABLE_TTF && function_exists('imagettftext') && file_exists($ttf)) $use_ttf = true;
 
         $extra_h = 0; 
         if ($top)    $extra_h += max(60, $font_px + 30);
@@ -1243,8 +1222,8 @@ class RightWin_QR_Portal {
         return $attach_id;
     }
 
-    /* ================= Footer Disclaimer ================= */
-    public function footer_disclaimer() {
+    /* ---------------- Footer disclaimer ---------------- */
+    public function footer_disclaimer(){
         $s = get_option(self::OPTION_SETTINGS, ['contact_html'=>'']);
         echo '<div class="rwqr-disclaimer" style="text-align:center;margin:24px 0;font-size:12px;opacity:.8">';
         echo 'Content in QR codes is provided by their creators. Admin is a service provider only. ';
@@ -1252,8 +1231,8 @@ class RightWin_QR_Portal {
         echo '</div>';
     }
 
-    /* ================= Admin QR actions (admin lock) ================= */
-    public function admin_toggle_qr() {
+    /* ---------------- Admin QR actions (admin lock) ---------------- */
+    public function admin_toggle_qr(){
         if (!current_user_can('manage_options')) wp_die('No permission');
         $post_id = absint($_GET['post'] ?? 0);
         check_admin_referer('rwqr_toggle_' . $post_id);
@@ -1264,18 +1243,32 @@ class RightWin_QR_Portal {
         else delete_post_meta($post_id, self::META_ADMIN_LOCKED);
         wp_safe_redirect(admin_url('admin.php?page=rwqr-admin')); exit;
     }
-    public function admin_delete_qr() {
+    public function admin_delete_qr(){
         if (!current_user_can('delete_posts')) wp_die('No permission');
         $post_id = absint($_GET['post'] ?? 0);
         check_admin_referer('rwqr_delete_' . $post_id);
         wp_delete_post($post_id, true);
         wp_safe_redirect(admin_url('admin.php?page=rwqr-admin')); exit;
     }
+
+    /* ---------------- Soft requirement checks ---------------- */
+    public function soft_requirements_check(){
+        // Show notices instead of failing activation
+        if (!function_exists('imagecreatetruecolor')) {
+            rwqrp_admin_notice('PHP GD extension is not enabled. The plugin will activate, but QR images and TTF titles cannot be generated until GD is enabled.', 'warning');
+        }
+        if (RWQR_DEFER_REWRITE) {
+            rwqrp_admin_notice('Compat mode: rewrite flush deferred. Please visit <strong>Settings → Permalinks → Save</strong> once to enable <code>/r/{alias}</code> short links.', 'warning');
+        }
+        if (RWQR_DISABLE_TTF) {
+            rwqrp_admin_notice('Compat mode: TTF titles disabled (bitmap font). Set <code>RWQR_DISABLE_TTF</code> to <code>false</code> to enable TTF rendering if your GD has FreeType.', 'warning');
+        }
+    }
 }
 
 endif;
 
-/* ================= Bootstrap ================= */
+/* ---------------- Bootstrap ---------------- */
 if (!function_exists('rwqr_instance')) {
     function rwqr_instance(){ static $i; if(!$i) $i=new RightWin_QR_Portal(); return $i; }
 }
