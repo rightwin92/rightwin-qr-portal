@@ -1,73 +1,89 @@
-/* RightWin QR Portal JS */
-(function(){
-  function $(sel, ctx){ return (ctx||document).querySelector(sel); }
-  function $all(sel, ctx){ return Array.prototype.slice.call((ctx||document).querySelectorAll(sel)); }
+/* RightWin QR Portal – light behavior helpers */
+/* global rwqrPortal, jQuery */
+(function($){
   function byId(id){ return document.getElementById(id); }
+  function show(el){ if(el) el.style.display=''; }
+  function hide(el){ if(el) el.style.display='none'; }
 
-  function toggleContentFields(){
-    var typeSel = byId('qr_content_type');
-    if(!typeSel) return;
-    var val = (typeSel.value || 'link').toLowerCase();
+  // Wizard: toggle fieldsets by content type
+  function updateContentType(){
+    var sel = byId('qr_content_type');
+    if(!sel) return;
+    var ct = sel.value;
 
-    $all('.rwqr-fieldset').forEach(function(el){ el.style.display='none'; });
+    // hide all
+    var sets = document.querySelectorAll('.rwqr-fieldset');
+    sets.forEach(function(s){ hide(s); });
 
-    var showCls = '.rwqr-ct-' + val;
-    var el = $(showCls);
-    if(el) el.style.display = '';
-
-    var modeSel = byId('qr_mode') || $('[name="qr_type"]');
-    var dynOnly = $('.rwqr-dynamic-only');
-    if (dynOnly && modeSel){
-      var isDynamic = (modeSel.value || 'dynamic') === 'dynamic';
-      dynOnly.style.display = isDynamic ? '' : 'none';
+    // map ct -> class
+    var map = {
+      link: '.rwqr-ct-link',
+      text: '.rwqr-ct-text',
+      vcard: '.rwqr-ct-vcard',
+      file: '.rwqr-ct-file',
+      catalogue: '.rwqr-ct-catalogue',
+      price: '.rwqr-ct-price',
+      social: '.rwqr-ct-social',
+      greview: '.rwqr-ct-greview',
+      form: '.rwqr-ct-form'
+    };
+    var selCls = map[ct];
+    if(selCls){
+      document.querySelectorAll(selCls).forEach(function(s){ show(s); });
     }
   }
 
-  function onModeChange(){ toggleContentFields(); }
-
-  function bind(){
-    var typeSel = byId('qr_content_type');
-    if(typeSel){
-      typeSel.addEventListener('change', toggleContentFields);
-      toggleContentFields();
-    }
-    var modeSel = byId('qr_mode') || $('[name="qr_type"]');
-    if(modeSel){
-      modeSel.addEventListener('change', onModeChange);
-      if(!modeSel.id) modeSel.id = 'qr_mode';
-      onModeChange();
-    }
-
-    var logo = $('[name="qr_logo"]');
-    if (logo && typeof rwqrPortal !== 'undefined'){
-      var maxMB = parseFloat(rwqrPortal.maxLogoMB || 2);
-      logo.addEventListener('change', function(){
-        if(!logo.files || !logo.files[0]) return;
-        var sizeMB = logo.files[0].size / (1024*1024);
-        if(sizeMB > maxMB){
-          alert('Logo is too large. Max allowed: ' + maxMB + ' MB');
-          logo.value = '';
-        }
-      });
-    }
-
-    // Auto-prepend https:// if missing
-    $all('input[type="text"], input[type="url"]').forEach(function(inp){
-      inp.addEventListener('blur', function(){
-        var v = (inp.value || '').trim();
-        if(!v) return;
-        var hasScheme = /^[a-z][a-z0-9+\-.]*:\/\//i.test(v) || v.indexOf('//')===0;
-        var looksDomain = /^[a-z0-9.-]+\.[a-z]{2,}($|\/|#|\?)/i.test(v);
-        if(!hasScheme && looksDomain){
-          inp.value = 'https://' + v;
-        }
-      });
+  // Wizard: show/hide dynamic-only fields
+  function updateMode(){
+    var mode = byId('qr_mode');
+    if(!mode) return;
+    var isDynamic = mode.value === 'dynamic';
+    document.querySelectorAll('.rwqr-dynamic-only').forEach(function(s){
+      if(isDynamic) show(s); else hide(s);
     });
   }
 
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', bind);
-  } else {
-    bind();
+  // File size validation (logo)
+  function logoGuard(){
+    var input = document.querySelector('input[name="qr_logo"]');
+    if(!input) return;
+    input.addEventListener('change', function(){
+      try{
+        if(!this.files || !this.files[0]) return;
+        var maxMB = (rwqrPortal && rwqrPortal.maxLogoMB) ? parseFloat(rwqrPortal.maxLogoMB) : 2;
+        var sizeMB = this.files[0].size / (1024*1024);
+        if(sizeMB > maxMB){
+          alert('Logo exceeds maximum size of '+maxMB+' MB. Please choose a smaller file.');
+          this.value = '';
+        }
+      }catch(e){}
+    });
   }
-})();
+
+  // Enhance Quick Edit toggles if present (progressive; PHP already inlines)
+  function quickEditEnhance(){
+    // No-op: handled by inline onclick, but keep hook if we want to expand later
+  }
+
+  // Init on DOM ready
+  $(function(){
+    // Wizard hooks
+    if(byId('qr_content_type')){
+      updateContentType();
+      byId('qr_content_type').addEventListener('change', updateContentType);
+    }
+    if(byId('qr_mode')){
+      updateMode();
+      byId('qr_mode').addEventListener('change', updateMode);
+    }
+    logoGuard();
+    quickEditEnhance();
+
+    // If Elementor preview is active, keep things visible and non-interactive
+    if (document.body.classList.contains('elementor-editor-active')) {
+      // Ensure some fieldsets are visible for design-time
+      document.querySelectorAll('.rwqr-fieldset').forEach(function(s){ s.style.display=''; });
+    }
+  });
+
+})(jQuery);
