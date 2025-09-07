@@ -992,8 +992,15 @@ class RightWin_QR_Portal {
                     if ($alias) {
                         $share_body = rawurlencode('Scan this QR: '.$short);
                         $mailto = 'mailto:?subject='.rawurlencode('Your QR').'&body='.$share_body;
-                        echo '<a class="rwqr-btn" target="_blank" href="https://api.whatsapp.com/send?text='.$share_body.'">WhatsApp</a> ';
-                        echo '<a class="rwqr-btn" href="'.$mailto.'">Email</a> ';
+                        $subject = 'Your QR: ' . get_the_title($id);
+$bodyText = "Scan this QR:\n" . $short . "\n\n(If the button doesn’t open your mail app, copy this link.)";
+$mailto = 'mailto:?subject=' . rawurlencode($subject) . '&body=' . rawurlencode($bodyText);
+
+// WhatsApp share (unchanged)
+echo '<a class="rwqr-btn" target="_blank" rel="noopener" href="https://api.whatsapp.com/send?text='.$share_body.'">WhatsApp</a> ';
+
+// Email share (hardened: explicit class + data attr + href fallback)
+echo '<a class="rwqr-btn rwqr-mailto" href="'.$mailto.'" data-mailto="'.$mailto.'" rel="nofollow">Email</a> ';
                     }
                 }
 
