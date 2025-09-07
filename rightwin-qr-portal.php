@@ -992,15 +992,17 @@ class RightWin_QR_Portal {
                     if ($alias) {
                         $share_body = rawurlencode('Scan this QR: '.$short);
                         $mailto = 'mailto:?subject='.rawurlencode('Your QR').'&body='.$share_body;
-                        $subject = 'Your QR: ' . get_the_title($id);
-$bodyText = "Scan this QR:\n" . $short . "\n\n(If the button doesn’t open your mail app, copy this link.)";
+                        // Build a robust mailto with CRLF line breaks (some clients require %0D%0A)
+$subject = 'Your QR: ' . get_the_title($id);
+$eol = "%0D%0A";
+$bodyText = "Scan this QR: " . $short . $eol . $eol . "(If the button doesn’t open your mail app, copy this link.)";
 $mailto = 'mailto:?subject=' . rawurlencode($subject) . '&body=' . rawurlencode($bodyText);
 
 // WhatsApp share (unchanged)
 echo '<a class="rwqr-btn" target="_blank" rel="noopener" href="https://api.whatsapp.com/send?text='.$share_body.'">WhatsApp</a> ';
 
-// Email share (hardened: explicit class + data attr + href fallback)
-echo '<a class="rwqr-btn rwqr-mailto" href="'.$mailto.'" data-mailto="'.$mailto.'" rel="nofollow">Email</a> ';
+// Email share as a BUTTON to avoid form/anchor interception by themes
+echo '<button type="button" class="rwqr-btn rwqr-mailto" data-mailto="'.$mailto.'" onclick="return window.rwqrOpenMail && window.rwqrOpenMail(this);">Email</button> ';
                     }
                 }
 
