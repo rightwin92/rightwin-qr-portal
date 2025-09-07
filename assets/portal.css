@@ -1,16 +1,33 @@
-/* RightWin QR Portal – clean UI + paused badge */
+/* RightWin QR Portal – minimal, clean styles */
+
+:root{
+  --rwqr-dark:#111;
+  --rwqr-light:#fff;
+  --rwqr-gray:#f7f7f7;
+  --rwqr-border:#e5e7eb;
+  --rwqr-ok:#065f46;
+  --rwqr-ok-bg:#dcfce7;
+  --rwqr-ok-br:#bbf7d0;
+  --rwqr-warn:#b91c1c;
+  --rwqr-warn-bg:#fee2e2;
+  --rwqr-warn-br:#fecaca;
+  --rwqr-accent:#111;
+}
 
 .rwqr-card{
   background:#fff;
-  border:1px solid #e5e7eb;
+  border:1px solid var(--rwqr-border);
   border-radius:12px;
-  padding:16px 18px;
+  padding:18px;
+  box-shadow:0 2px 10px rgba(0,0,0,.04);
   margin:16px 0;
-  box-shadow:0 2px 6px rgba(0,0,0,.04);
 }
-.rwqr-auth{ display:grid; grid-template-columns:1fr; gap:16px; }
+.rwqr-auth{
+  display:grid;
+  gap:16px;
+}
 @media (min-width: 900px){
-  .rwqr-auth{ grid-template-columns: 1fr 1fr 1fr; }
+  .rwqr-auth{ grid-template-columns: repeat(3, 1fr); }
 }
 
 .rwqr-grid{
@@ -22,53 +39,95 @@
   .rwqr-grid{ grid-template-columns: 1fr; }
 }
 
-.rwqr-card h3{ margin:0 0 10px; font-size:18px; }
-.rwqr-card p{ margin:8px 0; }
-
 .rwqr-btn{
   display:inline-block;
-  background:#111827;
-  color:#fff !important;
-  padding:8px 12px;
-  border-radius:8px;
+  padding:10px 14px;
+  border-radius:10px;
+  border:1px solid var(--rwqr-accent);
+  background:transparent;
+  color:var(--rwqr-accent);
   text-decoration:none;
-  border:1px solid #111827;
-  transition:transform .02s ease-in;
-  font-size:14px;
-  line-height:1.2;
-  margin:2px 4px 2px 0;
+  cursor:pointer;
+  margin:2px 2px 6px 0;
+  transition:.15s ease-in-out;
 }
-.rwqr-btn:hover{ background:#000; transform:translateY(-1px); }
-
-.rwqr-error{
-  background:#fee2e2; border:1px solid #fecaca; color:#991b1b;
-  padding:10px 12px; border-radius:8px; margin:10px 0;
-}
-.rwqr-success{
-  background:#dcfce7; border:1px solid #bbf7d0; color:#14532d;
-  padding:10px 12px; border-radius:8px; margin:10px 0;
+.rwqr-btn:hover{ background:#000; color:#fff; border-color:#000; }
+.rwqr-btn-disabled,
+.rwqr-btn:disabled{
+  opacity:.5; cursor:not-allowed; pointer-events:none;
 }
 
 .rwqr-table{
-  width:100%; border-collapse:collapse; font-size:14px;
+  width:100%;
+  border-collapse:collapse;
 }
-.rwqr-table th, .rwqr-table td{
-  border-bottom:1px solid #e5e7eb; padding:10px 8px; text-align:left;
+.rwqr-table th,
+.rwqr-table td{
+  padding:10px;
+  border-bottom:1px solid var(--rwqr-border);
+  text-align:left;
+  vertical-align:top;
 }
-.rwqr-table th{ background:#f9fafb; font-weight:600; }
 
-/* NEW: Paused badge styling */
 .rwqr-status-badge{
   display:inline-block;
-  padding:2px 8px;
-  border-radius:12px;
-  font-size:12px;
+  padding:3px 10px;
   font-weight:600;
-  line-height:1.4;
+  border-radius:999px;
+  font-size:12px;
+  border:1px solid;
 }
 .rwqr-status-active{
-  background:#dcfce7; color:#065f46; border:1px solid #bbf7d0;
+  color:var(--rwqr-ok);
+  background:var(--rwqr-ok-bg);
+  border-color:var(--rwqr-ok-br);
 }
 .rwqr-status-paused{
-  background:#fee2e2; color:#991b1b; border:1px solid #fecaca;
+  color:var(--rwqr-warn);
+  background:var(--rwqr-warn-bg);
+  border-color:var(--rwqr-warn-br);
+}
+/* tiny red “paused” chip when needed inline */
+.rwqr-badge-paused{
+  display:inline-block; margin-left:6px;
+  padding:1px 6px; font-size:10px; line-height:1.8;
+  border-radius:999px; color:#991b1b;
+  background:#fee2e2; border:1px solid #fecaca;
+  font-weight:700;
+}
+
+.rwqr-error{
+  background:#fff7f7;
+  border:1px solid #fecaca;
+  color:#991b1b;
+  border-radius:8px;
+  padding:10px 12px;
+}
+.rwqr-success{
+  background:#ecfdf5;
+  border:1px solid #bbf7d0;
+  color:#065f46;
+  border-radius:8px;
+  padding:10px 12px;
+}
+
+/* Forms */
+.rwqr-card input[type="text"],
+.rwqr-card input[type="email"],
+.rwqr-card input[type="number"],
+.rwqr-card input[type="password"],
+.rwqr-card textarea,
+.rwqr-card select{
+  width:100%;
+  max-width:600px;
+  padding:10px 12px;
+  border:1px solid var(--rwqr-border);
+  border-radius:8px;
+  background:#fff;
+}
+.rwqr-card textarea{ min-height:120px; }
+
+/* Elementor editor previews */
+.elementor-editor-active .rwqr-card{
+  outline:1px dashed #ddd;
 }
