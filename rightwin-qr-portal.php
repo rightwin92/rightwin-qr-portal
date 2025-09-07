@@ -2,7 +2,7 @@
 /*
 Plugin Name: RightWin QR Portal
 Description: QR code portal with dynamic redirects, analytics, Elementor-safe shortcodes, quick-edit dashboard, admin user controls (pause/resume/delete), and settings.
-Version: 1.4.2
+Version: 1.4.3
 Author: RIGHT WIN MEDIAS
 Text Domain: rightwin-qr-portal
 */
@@ -16,11 +16,12 @@ if (!class_exists('RightWin_QR_Portal')) :
 
 class RightWin_QR_Portal {
 
-    const VERSION = '1.4.2';
+    const VERSION = '1.4.3';
     const CPT = 'rwqr';
     const TABLE_SCANS = 'rwqr_scans';
     const OPTION_SETTINGS = 'rwqr_settings';
     const USER_PAUSED_META = 'rwqr_paused'; // 1/0
+    const META_ADMIN_LOCKED = 'admin_locked'; // 1=paused by admin (owner cannot override)
 
     public function __construct() {
         register_activation_hook(__FILE__, [$this, 'activate']);
@@ -30,6 +31,7 @@ class RightWin_QR_Portal {
         add_action('init', [$this, 'register_cpt']);
         add_action('init', [$this, 'add_rewrite']);
         add_filter('query_vars', [$this, 'query_vars']);
+        add_action('init', [$this, 'ensure_author_caps']); // ensure caps on every load
 
         add_action('template_redirect', [$this, 'handle_redirect']);
         add_action('template_redirect', [$this, 'handle_pdf']);
@@ -87,7 +89,11 @@ class RightWin_QR_Portal {
         $this->add_rewrite();
         flush_rewrite_rules();
 
-        // Ensure authors have basic caps
+        $this->ensure_author_caps();
+    }
+
+    public function ensure_author_caps() {
+        // guarantee authors can edit their published CPT items even on strict hosts
         if ($role = get_role('author')) {
             $role->add_cap('upload_files');
             $role->add_cap('edit_posts');
@@ -109,7 +115,7 @@ class RightWin_QR_Portal {
             'menu_icon' => 'dashicons-qrcode',
             'supports' => ['title', 'thumbnail', 'author'],
             'capability_type' => 'post',
-            'map_meta_cap' => true,
+            'map_meta_cap' => true, // allow Authors to edit their own QR posts
         ]);
     }
 
@@ -290,6 +296,7 @@ class RightWin_QR_Portal {
                 $id = get_the_ID();
                 $alias = get_post_meta($id, 'alias', true);
                 $status = get_post_meta($id, 'status', true) ?: 'active';
+                $admin_locked = intval(get_post_meta($id, self::META_ADMIN_LOCKED, true)) === 1;
                 $scans = intval(get_post_meta($id, 'scan_count', true));
                 $owner = get_userdata(get_post_field('post_author', $id));
                 $toggle = wp_nonce_url(admin_url('admin-post.php?action=rwqr_toggle&post='.$id), 'rwqr_toggle_'.$id);
@@ -298,9 +305,10 @@ class RightWin_QR_Portal {
                 echo '<td><a href="'.esc_url(get_edit_post_link($id)).'" target="_blank">'.esc_html(get_the_title()).'</a></td>';
                 echo '<td>'.esc_html($owner ? $owner->user_login : '—').'</td>';
                 echo '<td>'.esc_html($alias ?: '—').'</td>';
+                $label = $admin_locked ? 'Paused by Admin' : ucfirst($status);
                 $badge = ($status==='paused')
-                    ? '<span style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;padding:2px 8px;border-radius:12px;font-weight:600;font-size:12px;">Paused</span>'
-                    : '<span style="background:#dcfce7;border:1px solid #bbf7d0;color:#065f46;padding:2px 8px;border-radius:12px;font-weight:600;font-size:12px;">Active</span>';
+                    ? '<span style="background:#fee2e2;border:1px solid #fecaca;color:#991b1b;padding:2px 8px;border-radius:12px;font-weight:600;font-size:12px;">'.$label.'</span>'
+                    : '<span style="background:#dcfce7;border:1px solid #bbf7d0;color:#065f46;padding:2px 8px;border-radius:12px;font-weight:600;font-size:12px;">'.$label.'</span>';
                 echo '<td>'.$badge.'</td>';
                 echo '<td>'.esc_html($scans).'</td>';
                 echo '<td><a class="button" href="'.$toggle.'">Start/Pause</a> ';
@@ -409,17 +417,25 @@ class RightWin_QR_Portal {
         if (!$post_id) { wp_safe_redirect(site_url('/dashboard')); exit; }
 
         $owner_id = intval(get_post_field('post_author', $post_id));
-        if (get_current_user_id() !== $owner_id || !current_user_can('edit_post', $post_id)) { wp_die('No permission'); }
 
         // Block toggling if admin paused the whole user account
-        if ($this->is_user_paused($owner_id)) { wp_safe_redirect(site_url('/dashboard')); exit; }
+        if ($this->is_user_paused($owner_id)) { wp_safe_redirect(add_query_arg(['notice'=>'account_paused'], site_url('/dashboard'))); exit; }
+
+        // Block toggling if admin locked this QR
+        $admin_locked = intval(get_post_meta($post_id, self::META_ADMIN_LOCKED, true)) === 1;
+        if ($admin_locked) { wp_safe_redirect(add_query_arg(['notice'=>'admin_locked'], site_url('/dashboard'))); exit; }
+
+        // Permission: allow owner OR any user with edit_post OR admins
+        if (get_current_user_id() !== $owner_id && !current_user_can('edit_post', $post_id) && !current_user_can('manage_options')) {
+            wp_safe_redirect(add_query_arg(['notice'=>'no_permission'], site_url('/dashboard'))); exit;
+        }
 
         $st = get_post_meta($post_id, 'status', true) ?: 'active';
         $new = ($st === 'active') ? 'paused' : 'active';
         update_post_meta($post_id, 'status', $new);
 
         // Ensure no stale cache on redirect target
-        wp_safe_redirect(add_query_arg(['_'=>time()], site_url('/dashboard'))); exit;
+        wp_safe_redirect(add_query_arg(['_'=>time(),'notice'=>'toggled'], site_url('/dashboard'))); exit;
     }
 
     public function admin_settings() {
@@ -458,6 +474,9 @@ class RightWin_QR_Portal {
         $m = $this->get_qr_meta($post->ID);
         $title_font_px = intval(get_post_meta($post->ID,'title_font_px',true));
         if ($title_font_px <= 0) $title_font_px = 28;
+
+        $admin_locked = intval(get_post_meta($post->ID, self::META_ADMIN_LOCKED, true)) === 1;
+
         ?>
         <style>.rwqr-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}</style>
         <div class="rwqr-grid">
@@ -495,6 +514,9 @@ class RightWin_QR_Portal {
                 <option value="active" <?php selected($m['status'],'active'); ?>>Active</option>
                 <option value="paused" <?php selected($m['status'],'paused'); ?>>Paused</option>
             </select></label></p>
+            <?php if ($admin_locked): ?>
+                <p><em style="color:#991b1b">This QR is locked by Admin (owner cannot change status from dashboard).</em></p>
+            <?php endif; ?>
         </div>
         <p><em>Save to regenerate the QR PNG.</em></p>
         <?php
@@ -863,10 +885,19 @@ class RightWin_QR_Portal {
     private function handle_quick_edit() {
         if (!isset($_POST['rwqr_quickedit_nonce']) || !wp_verify_nonce($_POST['rwqr_quickedit_nonce'],'rwqr_quickedit')) return;
         $id = absint($_POST['rwqr_id'] ?? 0);
-        if (!$id || !current_user_can('edit_post', $id)) return;
+        if (!$id) return;
 
         $owner_id = intval(get_post_field('post_author', $id));
+
+        // Allow owner or editors/admins
+        if (get_current_user_id() !== $owner_id && !current_user_can('edit_post', $id) && !current_user_can('manage_options')) return;
+
+        // Block if account paused
         if ($this->is_user_paused($owner_id)) return;
+
+        // Block if QR locked by admin
+        $admin_locked = intval(get_post_meta($id, self::META_ADMIN_LOCKED, true)) === 1;
+        if ($admin_locked) return;
 
         $alias  = sanitize_title($_POST['rwqr_alias'] ?? '');
         $status = ($_POST['rwqr_status'] ?? 'active') === 'paused' ? 'paused' : 'active';
@@ -890,7 +921,7 @@ class RightWin_QR_Portal {
         }
 
         $this->generate_and_attach_png($id);
-        wp_safe_redirect(add_query_arg(['_'=>time()], site_url('/dashboard'))); exit;
+        wp_safe_redirect(add_query_arg(['_'=>time(),'notice'=>'saved'], site_url('/dashboard'))); exit;
     }
 
     public function sc_dashboard($atts, $content = '') {
@@ -916,8 +947,15 @@ class RightWin_QR_Portal {
         ob_start();
         echo '<div class="rwqr-card"><h3>Your QR Codes</h3>';
 
+        $notice = isset($_GET['notice']) ? sanitize_text_field($_GET['notice']) : '';
+        if ($notice === 'admin_locked') echo '<div class="rwqr-error" style="margin-bottom:10px">This QR is locked by admin and cannot be changed.</div>';
+        if ($notice === 'account_paused') echo '<div class="rwqr-error" style="margin-bottom:10px">Your account is paused by admin.</div>';
+        if ($notice === 'no_permission') echo '<div class="rwqr-error" style="margin-bottom:10px">No permission to modify this QR.</div>';
+        if ($notice === 'toggled') echo '<div class="rwqr-success" style="margin-bottom:10px">Status updated.</div>';
+        if ($notice === 'saved') echo '<div class="rwqr-success" style="margin-bottom:10px">Changes saved.</div>';
+
         if ($account_paused) {
-            echo '<div class="rwqr-error" style="margin-bottom:10px"><strong>Your account is paused by admin.</strong> Redirects and toggles are disabled.</div>';
+            echo '<div class="rwqr-error" style="margin-bottom:10px"><strong>Your account is paused by admin.</strong> Redirects and actions are disabled.</div>';
         }
 
         echo '<p><a class="rwqr-btn'.($account_paused?' rwqr-btn-disabled':'').'" href="'.esc_url(site_url('/create')).'" '.($account_paused?'onclick="return false"':'').'>+ Create New QR</a></p>';
@@ -925,10 +963,11 @@ class RightWin_QR_Portal {
             echo '<table class="rwqr-table"><thead><tr><th>Name</th><th>Type</th><th>Short Link</th><th>Status</th><th>Scans</th><th>Actions</th></tr></thead><tbody>';
             while ($q->have_posts()) { $q->the_post();
                 $id = get_the_ID();
-                // fetch fresh meta (avoid stale object cache)
+                // fetch fresh meta (avoid stale)
                 $type = get_post_meta($id,'type',true);
                 $alias= get_post_meta($id,'alias',true);
                 $status=get_post_meta($id,'status',true) ?: 'active';
+                $admin_locked = intval(get_post_meta($id, self::META_ADMIN_LOCKED, true)) === 1;
                 $scans=intval(get_post_meta($id,'scan_count',true));
                 $short = $alias ? $this->build_shortlink($alias) : '—';
                 $thumb = get_the_post_thumbnail_url($id,'medium');
@@ -937,8 +976,9 @@ class RightWin_QR_Portal {
                 echo '<td>'.esc_html(ucfirst($type)).'</td>';
                 echo '<td>'.($alias?'<a href="'.esc_url($short).'" target="_blank">'.esc_html($short).'</a>':'—').'</td>';
 
-                $badge_class = ($status === 'paused') ? 'rwqr-status-badge rwqr-status-paused' : 'rwqr-status-badge rwqr-status-active';
-                echo '<td><span class="'.$badge_class.'">'.esc_html(ucfirst($status)).'</span></td>';
+                $label = $admin_locked ? 'Paused by Admin' : ucfirst($status);
+                $badge_class = ($status === 'paused' || $admin_locked) ? 'rwqr-status-badge rwqr-status-paused' : 'rwqr-status-badge rwqr-status-active';
+                echo '<td><span class="'.$badge_class.'">'.esc_html($label).'</span></td>';
 
                 echo '<td>'.esc_html($scans).'</td><td>';
 
@@ -951,31 +991,34 @@ class RightWin_QR_Portal {
                         echo '<a class="rwqr-btn" href="mailto:?subject=Your QR&body='.$sharetext.'">Email</a> ';
                     }
                 }
-                echo '<a class="rwqr-btn" href="'.esc_url(get_edit_post_link($id)).'" target="_blank" rel="noopener">Edit</a> ';
+                echo '<a class="rwqr-btn'.($account_paused?' rwqr-btn-disabled':'').'" href="'.esc_url(get_edit_post_link($id)).'" target="_blank" rel="noopener" '.($account_paused?'onclick="return false"':'').'>Edit</a> ';
 
-                // Owner Start/Pause (disabled if account paused)
+                // Owner Start/Pause (disabled if account paused OR admin locked)
                 echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'" style="display:inline">';
                 wp_nonce_field('rwqr_owner_toggle_'.$id);
                 echo '<input type="hidden" name="action" value="rwqr_owner_toggle">';
                 echo '<input type="hidden" name="rwqr_id" value="'.intval($id).'">';
-                echo '<button class="rwqr-btn'.($account_paused?' rwqr-btn-disabled':'').'" '.($account_paused?'disabled':'').'>'.($status==='active'?'Pause':'Start').'</button>';
+                $disabled = ($account_paused || $admin_locked) ? ' disabled' : '';
+                $btn_class = 'rwqr-btn'.(($account_paused||$admin_locked)?' rwqr-btn-disabled':'');
+                echo '<button class="'.$btn_class.'"'.$disabled.'>'.($status==='active' && !$admin_locked?'Pause':'Start').'</button>';
                 echo '</form> ';
 
-                // Inline Quick Edit
-                echo '<a class="rwqr-btn" href="#" onclick="var f=this.nextElementSibling; f.style.display=f.style.display?\'\':\'block\'; return false;">Quick Edit</a>';
+                // Inline Quick Edit (disabled if account paused OR admin locked)
+                $dis = ($account_paused || $admin_locked) ? ' disabled' : '';
+                echo '<a class="rwqr-btn'.(($account_paused||$admin_locked)?' rwqr-btn-disabled':'').'" href="#" onclick="if(this.classList.contains(\'rwqr-btn-disabled\'))return false; var f=this.nextElementSibling; f.style.display=f.style.display?\'\':\'block\'; return false;">Quick Edit</a>';
                 echo '<form method="post" style="display:none; margin-top:8px;">';
                 wp_nonce_field('rwqr_quickedit','rwqr_quickedit_nonce');
                 echo '<input type="hidden" name="rwqr_id" value="'.intval($id).'">';
-                echo '<p>Alias: <input type="text" name="rwqr_alias" value="'.esc_attr($alias).'" '.($account_paused?'disabled':'').'></p>';
+                echo '<p>Alias: <input type="text" name="rwqr_alias" value="'.esc_attr($alias).'"'.$dis.'></p>';
 
                 if ($type==='dynamic') {
-                    echo '<p>Target URL: <input type="text" name="rwqr_target_url" value="'.esc_attr(get_post_meta($id,'target_url',true)).'" '.($account_paused?'disabled':'').'></p>';
+                    echo '<p>Target URL: <input type="text" name="rwqr_target_url" value="'.esc_attr(get_post_meta($id,'target_url',true)).'"'.$dis.'></p>';
                 } else {
-                    echo '<p>Static Payload: <input type="text" name="rwqr_payload" value="'.esc_attr(get_post_meta($id,'payload',true)).'" '.($account_paused?'disabled':'').'></p>';
+                    echo '<p>Static Payload: <input type="text" name="rwqr_payload" value="'.esc_attr(get_post_meta($id,'payload',true)).'"'.$dis.'></p>';
                 }
 
-                echo '<p>Status: <select name="rwqr_status" '.($account_paused?'disabled':'').'><option value="active"'.selected($status,'active',false).'>Active</option><option value="paused"'.selected($status,'paused',false).'>Paused</option></select></p>';
-                echo '<p><button class="rwqr-btn" '.($account_paused?'disabled':'').'>Save</button></p>';
+                echo '<p>Status: <select name="rwqr_status"'.$dis.'><option value="active"'.selected($status,'active',false).'>Active</option><option value="paused"'.selected($status,'paused',false).'>Paused</option></select></p>';
+                echo '<p><button class="rwqr-btn"'.$dis.'>Save</button></p>';
                 echo '</form>';
 
                 echo '</td></tr>';
@@ -1172,14 +1215,20 @@ class RightWin_QR_Portal {
         echo '</div>';
     }
 
-    /* ================= Admin QR actions ================= */
+    /* ================= Admin QR actions (with admin lock) ================= */
 
     public function admin_toggle_qr() {
         if (!current_user_can('manage_options')) wp_die('No permission');
         $post_id = absint($_GET['post'] ?? 0);
         check_admin_referer('rwqr_toggle_' . $post_id);
         $st = get_post_meta($post_id,'status',true) ?: 'active';
-        update_post_meta($post_id,'status', $st==='active' ? 'paused' : 'active');
+        $new = ($st==='active') ? 'paused' : 'active';
+        update_post_meta($post_id,'status',$new);
+
+        // When admin toggles to paused => lock; when admin toggles to active => unlock
+        if ($new === 'paused') update_post_meta($post_id, self::META_ADMIN_LOCKED, 1);
+        else delete_post_meta($post_id, self::META_ADMIN_LOCKED);
+
         wp_safe_redirect(admin_url('admin.php?page=rwqr-admin')); exit;
     }
 
