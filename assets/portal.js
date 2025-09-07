@@ -113,3 +113,39 @@
     }
   }, true); // capture phase to beat other listeners
 })();
+// --- RWQR: Bullet-proof Email open helper ---
+window.rwqrOpenMail = function(el){
+  try {
+    var link = (el && el.getAttribute('data-mailto')) || '';
+    if (!link) return false;
+
+    // Use window.open with _self to satisfy some mobile & desktop clients
+    // (Safari/iOS & some Android mail apps prefer a direct navigation)
+    window.open(link, '_self');
+
+    // As a final fallback (very defensive)
+    setTimeout(function(){
+      try { window.location.href = link; } catch(e){}
+    }, 50);
+
+    return false; // prevent any parent default/propagation
+  } catch (e) {
+    // If anything unexpectedly fails, still hard-navigate
+    try { window.location.href = (el && el.getAttribute('data-mailto')) || ''; } catch(e2){}
+    return false;
+  }
+};
+
+// Also bind click in capture phase in case inline handlers are stripped
+(function(){
+  document.addEventListener('click', function(ev){
+    var target = ev.target && ev.target.closest && ev.target.closest('button.rwqr-mailto, a.rwqr-mailto');
+    if (!target) return;
+    // If the inline handler was removed by a sanitizer, call our global
+    if (typeof window.rwqrOpenMail === 'function') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.rwqrOpenMail(target);
+    }
+  }, true);
+})();
