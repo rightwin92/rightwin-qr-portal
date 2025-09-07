@@ -87,3 +87,29 @@
   });
 
 })(jQuery);
+// --- RWQR: Harden mailto buttons ---
+(function(){
+  function onMailtoClick(e){
+    try{
+      var a = e.currentTarget;
+      var link = (a.getAttribute('data-mailto') || a.getAttribute('href') || '').trim();
+      if (!link) return;
+      // Some themes stopPropagation on .btn; force navigation
+      window.location.href = link;
+      // prevent any parent form or handler from canceling
+      e.preventDefault();
+      e.stopPropagation();
+    } catch(err){}
+  }
+  document.addEventListener('click', function(e){
+    var el = e.target;
+    if (!el) return;
+    // climb up to the anchor if an inner span is clicked
+    if (el.closest) {
+      var a = el.closest('a.rwqr-mailto');
+      if (a) {
+        onMailtoClick(Object.assign(e, { currentTarget: a }));
+      }
+    }
+  }, true); // capture phase to beat other listeners
+})();
