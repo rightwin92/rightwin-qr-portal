@@ -738,69 +738,106 @@ final class RightWin_QR_Portal {
      * ----------------------------------------- */
 
     /** Portal shortcode: shows login/register or dashboard */
-    public function sc_portal($atts=[]){
-        if (is_user_logged_in()){
-            return $this->sc_dashboard();
+   public function sc_portal($atts = []){
+    if (is_user_logged_in()){
+        // Already logged in → show dashboard
+        if (shortcode_exists('rwqr_dashboard')) {
+            return do_shortcode('[rwqr_dashboard]');
         }
-
-        $out = '<div class="rwqr-grid">';
-
-        // Login
-        $out .= '<div class="rwqr-card"><h3>Login</h3><form method="post">'
-            .wp_nonce_field('rwqr_login','_rwqr_login',true,false)
-            .'<p><label>Username or Email<br><input type="text" name="log" required></label></p>'
-            .'<p><label>Password<br><input type="password" name="pwd" required></label></p>'
-            .'<p><button class="rwqr-btn">Login</button></p>'
-            .'</form></div>';
-
-        // Register
-        $out .= '<div class="rwqr-card"><h3>Register</h3><form method="post" class="rwqr-register-form">'
-            .wp_nonce_field('rwqr_register','_rwqr_register',true,false)
-            .'<p><label>Username<br><input type="text" name="user_login" required></label></p>'
-            .'<p><label>Email<br><input type="email" name="user_email" required></label></p>'
-            .'<p><label>Password<br><input type="password" name="user_pass" required></label></p>'
-            .'<label><input type="checkbox" name="accept_terms" value="1" required> Accept <a href="'.esc_url(site_url('/terms')).'" target="_blank">Terms</a></label><br>'
-            .'<label><input type="checkbox" name="accept_privacy" value="1" required> Accept <a href="'.esc_url(site_url('/privacy-policy')).'" target="_blank">Privacy Policy</a></label>'
-            .'<p><button class="rwqr-btn">Register</button></p>'
-            .'</form></div>';
-
-        // Handle login
-        if (isset($_POST['_rwqr_login']) && wp_verify_nonce($_POST['_rwqr_login'],'rwqr_login')){
-            $creds = [
-                'user_login'    => sanitize_text_field($_POST['log'] ?? ''),
-                'user_password' => $_POST['pwd'] ?? '',
-                'remember'      => true
-            ];
-            $user = wp_signon($creds, is_ssl());
-            if (!is_wp_error($user)){
-                wp_safe_redirect(get_permalink()); exit;
-            } else {
-                $out = '<div class="rwqr-error">'.esc_html($user->get_error_message()).'</div>'.$out;
-            }
-        }
-
-        // Handle register
-        if (isset($_POST['_rwqr_register']) && wp_verify_nonce($_POST['_rwqr_register'],'rwqr_register')){
-            if (empty($_POST['accept_terms']) || empty($_POST['accept_privacy'])){
-                return '<div class="rwqr-error">You must accept Terms & Privacy.</div>'.$out;
-            }
-            $login = sanitize_user($_POST['user_login'] ?? '');
-            $email = sanitize_email($_POST['user_email'] ?? '');
-            $pass  = $_POST['user_pass'] ?? '';
-            $uid = wp_create_user($login, $pass, $email);
-            if (!is_wp_error($uid)){
-                $u = new WP_User($uid);
-                $u->set_role('author');
-                update_user_meta($uid,'rwqr_terms_accepted', current_time('mysql'));
-                update_user_meta($uid,'rwqr_privacy_accepted', current_time('mysql'));
-                return '<div class="rwqr-success">Registered successfully. Please login.</div>'.$out;
-            } else {
-                return '<div class="rwqr-error">'.esc_html($uid->get_error_message()).'</div>'.$out;
-            }
-        }
-
-        return $out.'</div>';
+        return '<div class="rwqr-card"><h3>Dashboard</h3><p>You are logged in.</p><p><a class="rwqr-btn" href="'.esc_url(wp_logout_url()).'">Logout</a></p></div>';
     }
+
+    // Build Login + Register forms
+    $out = '<div class="rwqr-grid">';
+
+    // LOGIN
+    $out .= '<div class="rwqr-card"><h3>Login</h3><form method="post">'
+        .wp_nonce_field('rwqr_login','_rwqr_login',true,false)
+        .'<p><label>Username or Email<br><input type="text" name="log" required></label></p>'
+        .'<p><label>Password<br><input type="password" name="pwd" required></label></p>'
+        .'<p><button class="rwqr-btn">Login</button></p>'
+        .'</form></div>';
+
+    // REGISTER (with required Terms + Privacy)
+    $out .= '<div class="rwqr-card"><h3>Register</h3><form method="post" class="rwqr-register-form">'
+        .wp_nonce_field('rwqr_register','_rwqr_register',true,false)
+        .'<p><label>Username<br><input type="text" name="user_login" required></label></p>'
+        .'<p><label>Email<br><input type="email" name="user_email" required></label></p>'
+        .'<p><label>Password<br><input type="password" name="user_pass" required></label></p>'
+
+        // ✅ NEW: Required checkboxes
+        .'<label style="display:block;margin:6px 0">'
+            .'<input type="checkbox" name="accept_terms" value="1" required> '
+            .'Accept <a href="'.esc_url(site_url('/terms')).'" target="_blank" rel="noopener">Terms &amp; Conditions</a>'
+        .'</label>'
+        .'<label style="display:block;margin:6px 0">'
+            .'<input type="checkbox" name="accept_privacy" value="1" required> '
+            .'Accept <a href="'.esc_url(site_url('/privacy-policy')).'" target="_blank" rel="noopener">Privacy Policy</a>'
+        .'</label>'
+
+        .'<p><button class="rwqr-btn">Register</button></p>'
+        .'</form></div>';
+
+    // --- Handle LOGIN submit ---
+    if (isset($_POST['_rwqr_login']) && wp_verify_nonce($_POST['_rwqr_login'], 'rwqr_login')){
+        $creds = [
+            'user_login'    => sanitize_text_field($_POST['log'] ?? ''),
+            'user_password' => $_POST['pwd'] ?? '',
+            'remember'      => true,
+        ];
+        $user = wp_signon($creds, is_ssl());
+        if (!is_wp_error($user)){
+            // Reload the same page (will show dashboard because now logged in)
+            wp_safe_redirect(get_permalink()); exit;
+        } else {
+            $msg = '<div class="rwqr-error">'.esc_html($user->get_error_message()).'</div>';
+            return $msg.$out.'</div>';
+        }
+    }
+
+    // --- Handle REGISTER submit (with server-side enforcement) ---
+    if (isset($_POST['_rwqr_register']) && wp_verify_nonce($_POST['_rwqr_register'], 'rwqr_register')){
+        // Enforce both checkboxes
+        if (empty($_POST['accept_terms']) || empty($_POST['accept_privacy'])){
+            $msg = '<div class="rwqr-error">You must accept Terms &amp; Privacy.</div>';
+            return $msg.$out.'</div>';
+        }
+
+        $login = sanitize_user($_POST['user_login'] ?? '');
+        $email = sanitize_email($_POST['user_email'] ?? '');
+        $pass  = (string)($_POST['user_pass'] ?? '');
+
+        if (!$login || !$email || !$pass){
+            $msg = '<div class="rwqr-error">All fields are required.</div>';
+            return $msg.$out.'</div>';
+        }
+
+        if (username_exists($login) || email_exists($email)){
+            $msg = '<div class="rwqr-error">Username or email already exists.</div>';
+            return $msg.$out.'</div>';
+        }
+
+        $uid = wp_create_user($login, $pass, $email);
+        if (is_wp_error($uid)){
+            $msg = '<div class="rwqr-error">'.esc_html($uid->get_error_message()).'</div>';
+            return $msg.$out.'</div>';
+        }
+
+        // Optional: set role similar to portal
+        $u = new WP_User($uid);
+        if ($u && !is_wp_error($u)){
+            $u->set_role('author');
+            update_user_meta($uid,'rwqr_terms_accepted',   current_time('mysql'));
+            update_user_meta($uid,'rwqr_privacy_accepted', current_time('mysql'));
+        }
+
+        // Success: ask them to login (or auto-login if you prefer)
+        $msg = '<div class="rwqr-success">Registered successfully. Please login.</div>';
+        return $msg.$out.'</div>';
+    }
+
+    return $out.'</div>';
+}
 
     /** Dashboard shortcode */
     public function sc_dashboard($atts=[]){
