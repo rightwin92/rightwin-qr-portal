@@ -509,13 +509,19 @@ class RightWin_QR_Portal {
     public function admin_settings(){
         if (isset($_POST['rwqr_settings_nonce']) && wp_verify_nonce($_POST['rwqr_settings_nonce'], 'rwqr_save_settings')) {
             $settings = [
-                'max_logo_mb'  => max(0, floatval($_POST['max_logo_mb'] ?? 2)),
-                'contact_html' => wp_kses_post($_POST['contact_html'] ?? '')
-            ];
+    'max_logo_mb'   => max(0, floatval($_POST['max_logo_mb'] ?? 2)),
+    'contact_html'  => wp_kses_post($_POST['contact_html'] ?? ''),
+    'email_handler' => in_array(($_POST['email_handler'] ?? 'mailto'), ['mailto','gmail','outlook','yahoo'], true)
+                       ? $_POST['email_handler'] : 'mailto',
+];
             update_option(self::OPTION_SETTINGS, $settings);
             echo '<div class="updated"><p>Saved.</p></div>';
         }
-        $s = get_option(self::OPTION_SETTINGS, ['max_logo_mb'=>2, 'contact_html'=>'Contact: +91-00000 00000 | info@rightwinmedias.com']);
+        $s = get_option(self::OPTION_SETTINGS, [
+    'max_logo_mb'=>2,
+    'contact_html'=>'Contact: +91-00000 00000 | info@rightwinmedias.com',
+    'email_handler'=>'mailto'
+]);
         ?>
         <div class="wrap"><h1>RightWin QR — Settings</h1>
             <form method="post">
@@ -524,7 +530,20 @@ class RightWin_QR_Portal {
                     <tr><th><label for="max_logo_mb">Max logo upload (MB)</label></th>
                         <td><input type="number" step="0.1" min="0" id="max_logo_mb" name="max_logo_mb" value="<?php echo esc_attr($s['max_logo_mb']); ?>"></td></tr>
                     <tr><th><label for="contact_html">Powered by / Contact (HTML)</label></th>
-                        <td><textarea id="contact_html" name="contact_html" rows="3" class="large-text"><?php echo esc_textarea($s['contact_html']); ?></textarea></td></tr>
+    <td><textarea id="contact_html" name="contact_html" rows="3" class="large-text"><?php echo esc_textarea($s['contact_html']); ?></textarea></td></tr>
+
+<!-- ADD THIS NEW ROW BELOW -->
+<tr><th><label for="email_handler">Email share opens in</label></th>
+    <td>
+        <select id="email_handler" name="email_handler">
+            <option value="mailto"  <?php selected($s['email_handler'],'mailto');  ?>>System mail app (mailto:)</option>
+            <option value="gmail"   <?php selected($s['email_handler'],'gmail');   ?>>Gmail (web)</option>
+            <option value="outlook" <?php selected($s['email_handler'],'outlook'); ?>>Outlook.com (web)</option>
+            <option value="yahoo"   <?php selected($s['email_handler'],'yahoo');   ?>>Yahoo Mail (web)</option>
+        </select>
+        <p class="description">Choose a default for the Email button. Desktop users without a mail app benefit from Gmail/Outlook/Yahoo web compose.</p>
+    </td>
+</tr>
                 </table>
                 <p><button class="button button-primary">Save Settings</button></p>
             </form>
@@ -993,16 +1012,45 @@ class RightWin_QR_Portal {
                         $share_body = rawurlencode('Scan this QR: '.$short);
                         $mailto = 'mailto:?subject='.rawurlencode('Your QR').'&body='.$share_body;
                         // Build a robust mailto with CRLF line breaks (some clients require %0D%0A)
+// --- Share: WhatsApp + Email (handler-aware) ---
 $subject = 'Your QR: ' . get_the_title($id);
 $eol = "%0D%0A";
 $bodyText = "Scan this QR: " . $short . $eol . $eol . "(If the button doesn’t open your mail app, copy this link.)";
-$mailto = 'mailto:?subject=' . rawurlencode($subject) . '&body=' . rawurlencode($bodyText);
 
 // WhatsApp share (unchanged)
 echo '<a class="rwqr-btn" target="_blank" rel="noopener" href="https://api.whatsapp.com/send?text='.$share_body.'">WhatsApp</a> ';
 
-// Email share as a BUTTON to avoid form/anchor interception by themes
-echo '<button type="button" class="rwqr-btn rwqr-mailto" data-mailto="'.$mailto.'" onclick="return window.rwqrOpenMail && window.rwqrOpenMail(this);">Email</button> ';
+// Decide email handler
+$settings = get_option(self::OPTION_SETTINGS, []);
+$email_handler = $settings['email_handler'] ?? 'mailto';
+$mailto_link = '';
+
+// make URL-safe encodings for webmail
+$su = rawurlencode($subject);
+$bo = rawurlencode(str_replace('%0D%0A', "\r\n", $bodyText)); // ensure proper CRLF in actual body
+
+switch ($email_handler) {
+    case 'gmail':
+        // Gmail web compose
+        // to, subject, body
+        $mailto_link = 'https://mail.google.com/mail/?view=cm&fs=1&tf=1&to=&su='.$su.'&body='.$bo;
+        break;
+    case 'outlook':
+        // Outlook.com web compose
+        $mailto_link = 'https://outlook.live.com/mail/0/deeplink/compose?to=&subject='.$su.'&body='.$bo;
+        break;
+    case 'yahoo':
+        // Yahoo Mail web compose
+        $mailto_link = 'https://compose.mail.yahoo.com/?to=&subject='.$su.'&body='.$bo;
+        break;
+    default:
+        // System mail app (mailto)
+        $mailto_link = 'mailto:?subject=' . rawurlencode($subject) . '&body=' . rawurlencode(str_replace('%0D%0A', "\r\n", $bodyText));
+        break;
+}
+
+// Use a BUTTON to avoid theme interference; JS helper will open it reliably
+echo '<button type="button" class="rwqr-btn rwqr-mailto" data-mailto="'.$mailto_link.'" onclick="return window.rwqrOpenMail && window.rwqrOpenMail(this);">Email</button> ';
                     }
                 }
 
