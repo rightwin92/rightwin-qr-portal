@@ -149,3 +149,53 @@ window.rwqrOpenMail = function(el){
     }
   }, true);
 })();
+// RWQR: Inject Terms + Privacy checkboxes into the Register form (no PHP changes)
+(function(){
+  function addConsentBoxes(){
+    var form = document.querySelector('.rwqr-register-form');
+    if(!form || form.dataset.rwqrConsentInjected === '1') return;
+
+    // find submit button row to insert before it
+    var btn = form.querySelector('button, input[type="submit"]');
+    var holder = document.createElement('div');
+    holder.style.margin = '10px 0';
+    holder.style.padding = '10px';
+    holder.style.border = '1px solid #e5e7eb';
+    holder.style.borderRadius = '10px';
+    holder.style.background = '#fafafa';
+    holder.innerHTML =
+      '<label style="display:block;margin:6px 0">' +
+        '<input type="checkbox" name="accept_terms" value="1" required> ' +
+        'I accept the <a href="/terms" target="_blank" rel="noopener">Terms &amp; Conditions</a>.' +
+      '</label>' +
+      '<label style="display:block;margin:6px 0">' +
+        '<input type="checkbox" name="accept_privacy" value="1" required> ' +
+        'I have read the <a href="/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.' +
+      '</label>';
+
+    if (btn && btn.parentNode){
+      btn.parentNode.parentNode.insertBefore(holder, btn.parentNode);
+    } else {
+      form.appendChild(holder);
+    }
+
+    // enforce on submit (even if theme ignores "required")
+    form.addEventListener('submit', function(e){
+      var t = form.querySelector('input[name="accept_terms"]');
+      var p = form.querySelector('input[name="accept_privacy"]');
+      if(!(t && t.checked && p && p.checked)){
+        e.preventDefault();
+        alert('Please accept the Terms & Privacy to continue.');
+        return false;
+      }
+    }, true);
+
+    form.dataset.rwqrConsentInjected = '1';
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', addConsentBoxes);
+  } else {
+    addConsentBoxes();
+  }
+})();
