@@ -646,9 +646,9 @@ class RightWin_QR_Portal {
     }
 
     /* ---------------- Shortcodes ---------------- */
-    public function sc_portal($atts = []){
+  public function sc_portal($atts = []){
     if (is_user_logged_in()){
-        // Already logged in → show dashboard
+        // Already logged in → show dashboard if available
         if (shortcode_exists('rwqr_dashboard')) {
             return do_shortcode('[rwqr_dashboard]');
         }
@@ -664,6 +664,11 @@ class RightWin_QR_Portal {
         .'<p><label>Username or Email<br><input type="text" name="log" required></label></p>'
         .'<p><label>Password<br><input type="password" name="pwd" required></label></p>'
         .'<p><button class="rwqr-btn">Login</button></p>'
+        // Gentle notice for login users (no checkbox required here)
+        .'<p style="font-size:13px;color:#555;margin:8px 0 0">By continuing you agree to our '
+            .'<a href="'.esc_url(site_url('/terms')).'" target="_blank" rel="noopener">Terms &amp; Conditions</a> and '
+            .'<a href="'.esc_url(site_url('/privacy-policy')).'" target="_blank" rel="noopener">Privacy Policy</a>.'
+        .'</p>'
         .'</form></div>';
 
     // REGISTER (with required Terms + Privacy)
@@ -674,14 +679,16 @@ class RightWin_QR_Portal {
         .'<p><label>Password<br><input type="password" name="user_pass" required></label></p>'
 
         // ✅ NEW: Required checkboxes
-        .'<label style="display:block;margin:6px 0">'
+        .'<div style="margin:10px 0;padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa">'
+          .'<label style="display:block;margin:6px 0">'
             .'<input type="checkbox" name="accept_terms" value="1" required> '
-            .'Accept <a href="'.esc_url(site_url('/terms')).'" target="_blank" rel="noopener">Terms &amp; Conditions</a>'
-        .'</label>'
-        .'<label style="display:block;margin:6px 0">'
+            .'I accept the <a href="'.esc_url(site_url('/terms')).'" target="_blank" rel="noopener">Terms &amp; Conditions</a>.'
+          .'</label>'
+          .'<label style="display:block;margin:6px 0">'
             .'<input type="checkbox" name="accept_privacy" value="1" required> '
-            .'Accept <a href="'.esc_url(site_url('/privacy-policy')).'" target="_blank" rel="noopener">Privacy Policy</a>'
-        .'</label>'
+            .'I have read the <a href="'.esc_url(site_url('/privacy-policy')).'" target="_blank" rel="noopener">Privacy Policy</a>.'
+          .'</label>'
+        .'</div>'
 
         .'<p><button class="rwqr-btn">Register</button></p>'
         .'</form></div>';
@@ -695,7 +702,6 @@ class RightWin_QR_Portal {
         ];
         $user = wp_signon($creds, is_ssl());
         if (!is_wp_error($user)){
-            // Reload the same page (will show dashboard because now logged in)
             wp_safe_redirect(get_permalink()); exit;
         } else {
             $msg = '<div class="rwqr-error">'.esc_html($user->get_error_message()).'</div>';
@@ -703,7 +709,7 @@ class RightWin_QR_Portal {
         }
     }
 
-    // --- Handle REGISTER submit (with server-side enforcement) ---
+    // --- Handle REGISTER submit (server-side enforcement) ---
     if (isset($_POST['_rwqr_register']) && wp_verify_nonce($_POST['_rwqr_register'], 'rwqr_register')){
         // Enforce both checkboxes
         if (empty($_POST['accept_terms']) || empty($_POST['accept_privacy'])){
@@ -731,7 +737,7 @@ class RightWin_QR_Portal {
             return $msg.$out.'</div>';
         }
 
-        // Optional: set role similar to portal
+        // Optional: set role and store acceptance timestamps
         $u = new WP_User($uid);
         if ($u && !is_wp_error($u)){
             $u->set_role('author');
@@ -739,7 +745,7 @@ class RightWin_QR_Portal {
             update_user_meta($uid,'rwqr_privacy_accepted', current_time('mysql'));
         }
 
-        // Success: ask them to login (or auto-login if you prefer)
+        // Success: ask them to login
         $msg = '<div class="rwqr-success">Registered successfully. Please login.</div>';
         return $msg.$out.'</div>';
     }
