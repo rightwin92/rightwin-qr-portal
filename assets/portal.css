@@ -1,133 +1,41 @@
-/* RightWin QR Portal – minimal, clean styles */
+/* Core cards & grid */
+.rwqr-grid{display:flex;flex-wrap:wrap;gap:16px;margin:20px 0}
+.rwqr-card{flex:1;min-width:280px;background:#fff;border:1px solid #e5e7eb;
+  border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(0,0,0,.04);margin-bottom:16px}
+.rwqr-card h3{margin-top:0}
+.rwqr-btn{display:inline-block;background:#111;color:#fff;border:1px solid #111;
+  border-radius:8px;padding:8px 14px;text-decoration:none;cursor:pointer;font-size:14px}
+.rwqr-btn:hover{background:#000}
+.rwqr-btn.rwqr-danger{background:#dc2626;border-color:#dc2626}
+.rwqr-btn.rwqr-muted{background:#9ca3af;border-color:#9ca3af;color:#fff}
+.rwqr-success{background:#dcfce7;border:1px solid #bbf7d0;color:#166534;
+  padding:10px;border-radius:8px;margin:10px 0}
+.rwqr-error{background:#fee2e2;border:1px solid #fecaca;color:#991b1b;
+  padding:10px;border-radius:8px;margin:10px 0}
 
-:root{
-  --rwqr-dark:#111;
-  --rwqr-light:#fff;
-  --rwqr-gray:#f7f7f7;
-  --rwqr-border:#e5e7eb;
-  --rwqr-ok:#065f46;
-  --rwqr-ok-bg:#dcfce7;
-  --rwqr-ok-br:#bbf7d0;
-  --rwqr-warn:#b91c1c;
-  --rwqr-warn-bg:#fee2e2;
-  --rwqr-warn-br:#fecaca;
-  --rwqr-accent:#111;
-}
+/* List items */
+.rwqr-list{display:flex;flex-direction:column;gap:14px}
+.rwqr-item{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fafafa}
+.rwqr-item-main{display:flex;gap:14px;align-items:flex-start}
+.rwqr-thumb{width:96px;height:96px;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;background:#fff}
+.rwqr-meta{flex:1}
+.rwqr-title{font-weight:600;font-size:15px;margin-bottom:4px}
+.rwqr-line{font-size:13px;margin-bottom:2px}
+.rwqr-actions{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
 
-.rwqr-card{
-  background:#fff;
-  border:1px solid var(--rwqr-border);
-  border-radius:12px;
-  padding:18px;
-  box-shadow:0 2px 10px rgba(0,0,0,.04);
-  margin:16px 0;
-}
-.rwqr-auth{
-  display:grid;
-  gap:16px;
-}
-@media (min-width: 900px){
-  .rwqr-auth{ grid-template-columns: repeat(3, 1fr); }
-}
+/* Paused badge */
+.rwqr-badge-paused{background:#ef4444;color:#fff;font-size:10px;padding:2px 6px;
+  border-radius:6px;margin-left:6px}
 
-.rwqr-grid{
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap:12px;
-}
-@media (max-width: 720px){
-  .rwqr-grid{ grid-template-columns: 1fr; }
-}
+/* Consent checkboxes */
+.rwqr-consent-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin:10px 0 6px}
+.rwqr-consent-item{display:flex;align-items:flex-start;gap:8px;
+  background:#fafafa;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;max-width:100%}
+.rwqr-consent-item input[type="checkbox"]{margin-top:2px}
+.rwqr-consent-item span,.rwqr-consent-item a{font-size:13px;line-height:1.4}
+@media (max-width:520px){.rwqr-consent-row{flex-direction:column}}
 
-.rwqr-btn{
-  display:inline-block;
-  padding:10px 14px;
-  border-radius:10px;
-  border:1px solid var(--rwqr-accent);
-  background:transparent;
-  color:var(--rwqr-accent);
-  text-decoration:none;
-  cursor:pointer;
-  margin:2px 2px 6px 0;
-  transition:.15s ease-in-out;
-}
-.rwqr-btn:hover{ background:#000; color:#fff; border-color:#000; }
-.rwqr-btn-disabled,
-.rwqr-btn:disabled{
-  opacity:.5; cursor:not-allowed; pointer-events:none;
-}
-
-.rwqr-table{
-  width:100%;
-  border-collapse:collapse;
-}
-.rwqr-table th,
-.rwqr-table td{
-  padding:10px;
-  border-bottom:1px solid var(--rwqr-border);
-  text-align:left;
-  vertical-align:top;
-}
-
-.rwqr-status-badge{
-  display:inline-block;
-  padding:3px 10px;
-  font-weight:600;
-  border-radius:999px;
-  font-size:12px;
-  border:1px solid;
-}
-.rwqr-status-active{
-  color:var(--rwqr-ok);
-  background:var(--rwqr-ok-bg);
-  border-color:var(--rwqr-ok-br);
-}
-.rwqr-status-paused{
-  color:var(--rwqr-warn);
-  background:var(--rwqr-warn-bg);
-  border-color:var(--rwqr-warn-br);
-}
-/* tiny red “paused” chip when needed inline */
-.rwqr-badge-paused{
-  display:inline-block; margin-left:6px;
-  padding:1px 6px; font-size:10px; line-height:1.8;
-  border-radius:999px; color:#991b1b;
-  background:#fee2e2; border:1px solid #fecaca;
-  font-weight:700;
-}
-
-.rwqr-error{
-  background:#fff7f7;
-  border:1px solid #fecaca;
-  color:#991b1b;
-  border-radius:8px;
-  padding:10px 12px;
-}
-.rwqr-success{
-  background:#ecfdf5;
-  border:1px solid #bbf7d0;
-  color:#065f46;
-  border-radius:8px;
-  padding:10px 12px;
-}
-
-/* Forms */
-.rwqr-card input[type="text"],
-.rwqr-card input[type="email"],
-.rwqr-card input[type="number"],
-.rwqr-card input[type="password"],
-.rwqr-card textarea,
-.rwqr-card select{
-  width:100%;
-  max-width:600px;
-  padding:10px 12px;
-  border:1px solid var(--rwqr-border);
-  border-radius:8px;
-  background:#fff;
-}
-.rwqr-card textarea{ min-height:120px; }
-
-/* Elementor editor previews */
-.elementor-editor-active .rwqr-card{
-  outline:1px dashed #ddd;
-}
+/* Consent footer */
+.rwqr-consent-footer{text-align:center;font-size:12px;color:#6b7280;margin:20px 0}
+.rwqr-consent-footer a{color:#111;font-weight:500;text-decoration:underline}
+.rwqr-consent-footer a:hover{text-decoration:none;color:#000}
