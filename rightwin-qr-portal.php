@@ -646,112 +646,40 @@ class RightWin_QR_Portal {
     }
 
     /* ---------------- Shortcodes ---------------- */
-  public function sc_portal($atts = []){
-    if (is_user_logged_in()){
-        // Already logged in → show dashboard if available
-        if (shortcode_exists('rwqr_dashboard')) {
-            return do_shortcode('[rwqr_dashboard]');
+    public function sc_portal($atts, $content = ''){
+        if ($this->is_elementor_edit()) return '<div class="rwqr-card"><h3>Portal Preview</h3><p>Login / Register / Forgot forms render on the live page.</p></div>';
+        if (is_user_logged_in()) {
+            return '<div class="rwqr-card"><h3>You are logged in</h3><p><a class="rwqr-btn" href="'.esc_url(get_permalink()).'?logout=1">Logout</a> <a class="rwqr-btn" href="'.esc_url(site_url('/dashboard')).'">Go to Dashboard</a></p></div>'
+                . $this->handle_logout();
         }
-        return '<div class="rwqr-card"><h3>Dashboard</h3><p>You are logged in.</p><p><a class="rwqr-btn" href="'.esc_url(wp_logout_url()).'">Logout</a></p></div>';
-    }
-
-    // Build Login + Register forms
-    $out = '<div class="rwqr-grid">';
-
-    // LOGIN
-    $out .= '<div class="rwqr-card"><h3>Login</h3><form method="post">'
-        .wp_nonce_field('rwqr_login','_rwqr_login',true,false)
-        .'<p><label>Username or Email<br><input type="text" name="log" required></label></p>'
-        .'<p><label>Password<br><input type="password" name="pwd" required></label></p>'
-        .'<p><button class="rwqr-btn">Login</button></p>'
-        // Gentle notice for login users (no checkbox required here)
-        .'<p style="font-size:13px;color:#555;margin:8px 0 0">By continuing you agree to our '
-            .'<a href="'.esc_url(site_url('/terms')).'" target="_blank" rel="noopener">Terms &amp; Conditions</a> and '
-            .'<a href="'.esc_url(site_url('/privacy-policy')).'" target="_blank" rel="noopener">Privacy Policy</a>.'
-        .'</p>'
-        .'</form></div>';
-
-    // REGISTER (with required Terms + Privacy)
-    $out .= '<div class="rwqr-card"><h3>Register</h3><form method="post" class="rwqr-register-form">'
-        .wp_nonce_field('rwqr_register','_rwqr_register',true,false)
-        .'<p><label>Username<br><input type="text" name="user_login" required></label></p>'
-        .'<p><label>Email<br><input type="email" name="user_email" required></label></p>'
-        .'<p><label>Password<br><input type="password" name="user_pass" required></label></p>'
-
-        // ✅ NEW: Required checkboxes
-        .'<div style="margin:10px 0;padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa">'
-          .'<label style="display:block;margin:6px 0">'
-            .'<input type="checkbox" name="accept_terms" value="1" required> '
-            .'I accept the <a href="'.esc_url(site_url('/terms')).'" target="_blank" rel="noopener">Terms &amp; Conditions</a>.'
-          .'</label>'
-          .'<label style="display:block;margin:6px 0">'
-            .'<input type="checkbox" name="accept_privacy" value="1" required> '
-            .'I have read the <a href="'.esc_url(site_url('/privacy-policy')).'" target="_blank" rel="noopener">Privacy Policy</a>.'
-          .'</label>'
-        .'</div>'
-
-        .'<p><button class="rwqr-btn">Register</button></p>'
-        .'</form></div>';
-
-    // --- Handle LOGIN submit ---
-    if (isset($_POST['_rwqr_login']) && wp_verify_nonce($_POST['_rwqr_login'], 'rwqr_login')){
-        $creds = [
-            'user_login'    => sanitize_text_field($_POST['log'] ?? ''),
-            'user_password' => $_POST['pwd'] ?? '',
-            'remember'      => true,
-        ];
-        $user = wp_signon($creds, is_ssl());
-        if (!is_wp_error($user)){
-            wp_safe_redirect(get_permalink()); exit;
-        } else {
-            $msg = '<div class="rwqr-error">'.esc_html($user->get_error_message()).'</div>';
-            return $msg.$out.'</div>';
+        $out = '<div class="rwqr-auth">'
+            .'<div class="rwqr-card"><h3>Login</h3><form method="post">'
+            .wp_nonce_field('rwqr_login','_rwqr_login',true,false)
+            .'<p><label>Username or Email<br><input type="text" name="log" required></label></p>'
+            .'<p><label>Password<br><input type="password" name="pwd" required></label></p>'
+            .'<p><button class="rwqr-btn">Login</button></p></form></div>'
+            .'<div class="rwqr-card"><h3>Register</h3><form method="post">'
+            .wp_nonce_field('rwqr_register','_rwqr_register',true,false)
+            .'<p><label>Username<br><input type="text" name="user_login" required></label></p>'
+            .'<p><label>Email<br><input type="email" name="user_email" required></label></p>'
+            .'<p><label>Password<br><input type="password" name="user_pass" required></label></p>'
+            .'<p><button class="rwqr-btn">Register</button></p></form></div>'
+            .'<div class="rwqr-card"><h3>Forgot Password</h3><form method="post" action="'.esc_url(wp_lostpassword_url()).'">'
+            .'<p><label>Email<br><input type="email" name="user_login" required></label></p>'
+            .'<p><button class="rwqr-btn">Send Reset Link</button></p></form></div>'
+            .'</div>';
+        if (isset($_POST['_rwqr_login']) && wp_verify_nonce($_POST['_rwqr_login'],'rwqr_login')) {
+            $creds = ['user_login'=>sanitize_text_field($_POST['log']), 'user_password'=>$_POST['pwd'], 'remember'=>true];
+            $u = wp_signon($creds, is_ssl());
+            if (!is_wp_error($u)) { wp_safe_redirect(site_url('/create')); exit; }
+            else $out = '<div class="rwqr-error">'.esc_html($u->get_error_message()).'</div>'.$out;
         }
-    }
-
-    // --- Handle REGISTER submit (server-side enforcement) ---
-    if (isset($_POST['_rwqr_register']) && wp_verify_nonce($_POST['_rwqr_register'], 'rwqr_register')){
-        // Enforce both checkboxes
-        if (empty($_POST['accept_terms']) || empty($_POST['accept_privacy'])){
-            $msg = '<div class="rwqr-error">You must accept Terms &amp; Privacy.</div>';
-            return $msg.$out.'</div>';
+        if (isset($_POST['_rwqr_register']) && wp_verify_nonce($_POST['_rwqr_register'],'rwqr_register')) {
+            $uid = wp_create_user(sanitize_user($_POST['user_login']), (string)$_POST['user_pass'], sanitize_email($_POST['user_email']));
+            if (!is_wp_error($uid)) { (new WP_User($uid))->set_role('author'); $out = '<div class="rwqr-success">Registered. Please login.</div>' . $out; }
+            else { $out = '<div class="rwqr-error">'.esc_html($uid->get_error_message()).'</div>'.$out; }
         }
-
-        $login = sanitize_user($_POST['user_login'] ?? '');
-        $email = sanitize_email($_POST['user_email'] ?? '');
-        $pass  = (string)($_POST['user_pass'] ?? '');
-
-        if (!$login || !$email || !$pass){
-            $msg = '<div class="rwqr-error">All fields are required.</div>';
-            return $msg.$out.'</div>';
-        }
-
-        if (username_exists($login) || email_exists($email)){
-            $msg = '<div class="rwqr-error">Username or email already exists.</div>';
-            return $msg.$out.'</div>';
-        }
-
-        $uid = wp_create_user($login, $pass, $email);
-        if (is_wp_error($uid)){
-            $msg = '<div class="rwqr-error">'.esc_html($uid->get_error_message()).'</div>';
-            return $msg.$out.'</div>';
-        }
-
-        // Optional: set role and store acceptance timestamps
-        $u = new WP_User($uid);
-        if ($u && !is_wp_error($u)){
-            $u->set_role('author');
-            update_user_meta($uid,'rwqr_terms_accepted',   current_time('mysql'));
-            update_user_meta($uid,'rwqr_privacy_accepted', current_time('mysql'));
-        }
-
-        // Success: ask them to login
-        $msg = '<div class="rwqr-success">Registered successfully. Please login.</div>';
-        return $msg.$out.'</div>';
-    }
-
-    return $out.'</div>';
-}
+        return $out;
     }
     private function handle_logout(){
         if (isset($_GET['logout'])) { wp_logout(); wp_safe_redirect(get_permalink()); exit; }
